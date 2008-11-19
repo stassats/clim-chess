@@ -95,7 +95,10 @@
          (free-path-p board from to))))
 
 (defun check-n (board from to color)
-  t)
+  (let ((file-diff (abs (- (file to) (file from))))
+        (rank-diff (abs (- (rank to) (rank from)))))
+    (or (and (= file-diff 2) (= rank-diff 1))
+        (and (= file-diff 1) (= rank-diff 2)))))
 
 (defun check-p (board from to color)
   (multiple-value-bind (rank+ file+ length) (directions from to)
