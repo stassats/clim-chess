@@ -46,17 +46,25 @@
                      :display-function '(draw-board)
                      :incremental-redisplay t
                      :scroll-bars nil))
-   (black :application :scroll-bars nil)
-   (white :application :scroll-bars nil)
+   (turn :application
+         :scroll-bars nil
+         :incremental-redisplay t
+         :display-function '(display-turn))
    (interactor :interactor))
   (:layouts
    (default
        (vertically ()
-         (horizontally () (1/2 white) (1/2 black))
+         turn
          (2/3 board)
          (1/3 interactor)))))
 
 ;;;
+
+(defun display-turn (frame pane)
+  (declare (ignore frame))
+  (setf (medium-background pane)
+        (if *player-color* *white* *black*))
+  (draw-text* pane (format nil "~:[Black~;White~]'s turn." *player-color*) 10 15))
 
 (defun draw-board (frame pane)
   (declare (ignore frame))
@@ -65,9 +73,9 @@
               do (draw-square pane x y))))
 
 (defun square-occupied-by (piece)
-  (if (piece-color piece)
-      'square-with-white-piece
-      'square-with-black-piece))
+  (cond ((null piece) 'square)
+        ((piece-color piece) 'square-with-white-piece)
+        ('square-with-black-piece)))
 
 (defun square-color (x y)
   (if (evenp (+ x y))
@@ -163,7 +171,8 @@
     (retract-move board (pop (moves board)))))
 
 (defun chess ()
-  (setf *images* (load-pieces))
+  (unless *images*
+    (setf *images* (load-pieces)))
   (run-frame-top-level (make-application-frame 'chess)))
 
 ;;; dragging-output currently does not work well in mcclim
