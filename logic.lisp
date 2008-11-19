@@ -20,7 +20,9 @@
                    "br" "bn" "bb" "bq" "bk" "bp"))
 
 (defun make-inital-position ()
-  (make-array '(8 8) :initial-contents *initial-position*))
+  (list
+   (make-array '(8 8) :initial-contents *initial-position*)  ; Board
+   ()))                                ; Moves
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -33,12 +35,18 @@
 
 (defun board-square (board square)
   (when (valid-square-p square)
-    (aref board (rank square) (file square))))
+    (aref (car board) (rank square) (file square))))
 
 (defun (setf board-square) (value board square)
   (when (valid-square-p square)
-    (setf (aref board (rank square) (file square))
+    (setf (aref (car board) (rank square) (file square))
           value)))
+
+(defun moves (board)
+  (cadr board))
+
+(defun (setf moves) (value board)
+  (setf (cadr board) value))
 
 (defun square-keyword (square)
   "square -> :a1"
@@ -150,3 +158,11 @@
           for rank = (+ (rank from) rank+) then (+ rank rank+)
           for file = (+ (file from) file+)  then (+ file file+)
           never (board-square board (square rank file)))))
+
+(defun record-move (board from to)
+  (list from to (board-square board to)))
+
+(defun retract-move (board move)
+  (destructuring-bind (from to captured) move
+      (setf (board-square board from) (board-square board to)
+            (board-square board to) captured)))

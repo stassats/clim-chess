@@ -31,9 +31,7 @@
 
 (defclass board-pane (application-pane)
   ((board :initform (make-inital-position)
-          :accessor board)
-   (moves :initform nil
-          :accessor moves))
+          :accessor board))
   (:default-initargs
     :min-height (* *square-size* 8)
     :min-width (* *square-size* 8)
@@ -116,7 +114,7 @@
                    *images-path*))
 
 (defun load-piece (piece)
-  (make-pattern-from-bitmap-file (image-path piece)))
+  (make-pattern-from-bitmap-file (image-path piece) :format :xpm))
 
 (defun load-pieces ()
   (loop for piece in *pieces*
@@ -152,11 +150,17 @@
      (to 'square))
   (let ((board (find-board)))
     (if (check-move board from to *player-color*)
-        (psetf (board-square board from) nil
-               (board-square board to) (board-square board from)
-               *player-color* (not *player-color*))
+        (progn
+          (push (record-move board from to) (moves board))
+          (psetf (board-square board from) nil
+                 (board-square board to) (board-square board from)
+                 *player-color* (not *player-color*)))
         (format (find-pane-named *application-frame* 'interactor)
                 "Illegal move."))))
+
+(define-chess-command (com-retract :name t) ()
+  (let ((board (find-board)))
+    (retract-move board (pop (moves board)))))
 
 (defun chess ()
   (setf *images* (load-pieces))
