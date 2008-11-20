@@ -30,13 +30,13 @@
 (define-presentation-type piece ())
 
 (defclass board-pane (application-pane)
-  ((board :initform (make-inital-position)
+  ((board :initform (make-instance 'board)
           :accessor board))
   (:default-initargs
     :min-height (* *square-size* 8)
-    :min-width (* *square-size* 8)
+    :min-width  (* *square-size* 8)
     :max-height (* *square-size* 8)
-    :max-width (* *square-size* 8)))
+    :max-width  (* *square-size* 8)))
 
 (define-application-frame chess ()
   ()
@@ -99,9 +99,9 @@
 
 (define-presentation-method accept ((type piece) stream
                                     (view textual-view) &key)
-  (values (completing-from-suggestions (stream)
-            (dolist (piece *pieces*)
-              (suggest (string-downcase piece) piece)))))
+  (completing-from-suggestions (stream)
+    (dolist (piece *pieces*)
+      (suggest piece (keyword-piece piece)))))
 
 (define-presentation-method accept ((type square) stream
                                     (view textual-view) &key)
@@ -114,11 +114,14 @@
 
 (define-presentation-method present
     (square (type square) stream (view textual-view) &key)
-  (princ (square-keyword square) stream))
+  (write-string (square-keyword square) stream))
+
+(define-presentation-method present
+    (piece (type piece) stream (view textual-view) &key)
+  (write-string (piece-keyword piece) stream))
 
 (defun image-path (piece)
-  (merge-pathnames (make-pathname :name piece
-                                  :type "xpm")
+  (merge-pathnames (make-pathname :name piece :type "xpm")
                    *images-path*))
 
 (defun load-piece (piece)
@@ -140,31 +143,26 @@
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
-  (setf (find-board) (make-inital-position)
+  (setf (find-board) (make-instance 'board)
         *player-color* t))
 
-(define-chess-command (com-clear-square :name t) ((square 'square))
+(define-chess-command (com-clear-square :name t)
+    ((square 'square-with-piece))
   (setf (board-square (find-board) square) nil))
 
 (define-chess-command (com-add :name t)
     ((square 'square) (piece 'piece))
-  (setf (board-square (find-board) square )
-        piece))
+  (setf (board-square (find-board) square) piece))
 
 (define-chess-command (com-move :name t)
     ((from (if *player-color*
                'square-with-white-piece
                'square-with-black-piece))
      (to 'square))
-  (let ((board (find-board)))
-    (if (check-move board from to *player-color*)
-        (progn
-          (push (record-move board from to) (moves board))
-          (psetf (board-square board from) nil
-                 (board-square board to) (board-square board from)
-                 *player-color* (not *player-color*)))
-        (format (find-pane-named *application-frame* 'interactor)
-                "Illegal move."))))
+  (if (make-move (find-board) from to *player-color*)
+      (setf *player-color* (not *player-color*))
+      (format (find-pane-named *application-frame* 'interactor)
+              "Illegal move.")))
 
 (define-chess-command (com-retract :name t) ()
   (let ((board (find-board)))

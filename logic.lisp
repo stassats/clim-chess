@@ -19,10 +19,15 @@
 (defvar *pieces* '("wr" "wn" "wb" "wq" "wk" "wp"
                    "br" "bn" "bb" "bq" "bk" "bp"))
 
-(defun make-inital-position ()
-  (list
-   (make-array '(8 8) :initial-contents *initial-position*)  ; Board
-   ()))                                ; Moves
+(defclass board ()
+  ((contents :initform
+             (make-array '(8 8) :initial-contents *initial-position*)
+             :accessor contents)
+   (moves :initform nil :accessor moves)
+   (white-castling :initform (cons t t)  ; long - short
+                   :accessor white-castling)
+   (black-castling :initform (cons t t)
+                   :accessor black-castling)))
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -35,21 +40,15 @@
 
 (defun board-square (board square)
   (when (valid-square-p square)
-    (aref (car board) (rank square) (file square))))
+    (aref (contents board) (rank square) (file square))))
 
 (defun (setf board-square) (value board square)
   (when (valid-square-p square)
-    (setf (aref (car board) (rank square) (file square))
+    (setf (aref (contents board) (rank square) (file square))
           value)))
 
-(defun moves (board)
-  (cadr board))
-
-(defun (setf moves) (value board)
-  (setf (cadr board) value))
-
 (defun square-keyword (square)
-  "square -> :a1"
+  "0 0 -> :a1"
   (coerce (vector (char *letters* (rank square))
                   (digit-char (1+ (file square))))
           'simple-string))
@@ -80,16 +79,16 @@
 (defun equal-square (square1 square2)
   (equal square1 square2))
 
+;;;
+
 (defun check-move (board from to color)
   (let ((piece-from (board-square board from))
         (piece-to (board-square board to)))
-    (if (or (null piece-from)
-            (equal-square from to)
-            (and piece-to (equal-color piece-from piece-to))
-            (not (eql (piece-color piece-from) color))
-            (not (check-piece-move board from to color)))
-        nil
-        t)))
+    (unless (or (null piece-from)
+                (equal-square from to)
+                (and piece-to (equal-color piece-from piece-to))
+                (not (eql (piece-color piece-from) color)))
+      (check-piece-move board from to color))))
 
 (defun check-piece-move (board from to color)
   (funcall (intern (concatenate 'string "CHECK-"
@@ -128,7 +127,10 @@
 
 (defun check-k (board from to color)
   (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+ (< length 2))))
+    (and rank+
+         (case length
+           (2 (check-castling board from to color))
+           (1 t)))))
 
 (defun check-b (board from to color)
   (multiple-value-bind (rank+ file+ length) (directions from to)
@@ -144,13 +146,14 @@
 ;;  --    0-   +-
   
 (defun directions (from to)
-  (let* ((file-diff (- (file to) (file from)))
-         (rank-diff (- (rank to) (rank from)))
-         (length (max (abs file-diff) (abs rank-diff))))
-    (and (or (= (abs file-diff) (abs rank-diff)) (zerop file-diff) (zerop rank-diff))
-         (values (/ rank-diff length)
-                 (/ file-diff length)
-                 length))))
+  "Return direction of the move and length of the path.
+If move is illegal, return nil."
+  (let ((file-diff (- (file to) (file from)))
+        (rank-diff (- (rank to) (rank from))))
+    (and (or (zerop file-diff) (zerop rank-diff)
+             (= (abs file-diff) (abs rank-diff)))
+         (values (signum rank-diff) (signum file-diff)
+                 (max (abs file-diff) (abs rank-diff))))))
 
 (defun free-path-p (board from to &optional inclusive)
   (multiple-value-bind (rank+ file+ length) (directions from to)
@@ -159,6 +162,16 @@
           for file = (+ (file from) file+)  then (+ file file+)
           never (board-square board (square rank file)))))
 
+(defun make-move (board from to color)
+  (when (check-move board from to color)
+    (push (record-move board from to) (moves board))
+    (psetf (board-square board from) nil
+           (board-square board to) (board-square board from))
+    (when (and (eql (piece-name (board-square board to)) :k)
+               (check-castling board from to color))
+      (make-castling board to))
+    (adjust-castling board from to)))
+
 (defun record-move (board from to)
   (list from to (board-square board to)))
 
@@ -166,3 +179,39 @@
   (destructuring-bind (from to captured) move
       (setf (board-square board from) (board-square board to)
             (board-square board to) captured)))
+
+(defun castling-p (board color)
+  (if color
+      (white-castling board)
+      (black-castling board)))
+
+(defun (setf castling-p) (value board color)
+  (if color
+      (setf (white-castling board) value)
+      (setf (black-castling board) value)))
+
+(defun adjust-castling (board from to)
+  (let ((piece (board-square board to)))
+    (case (piece-name piece)
+      (:k (setf (castling board (piece-color piece)) (cons nil nil)))
+      (:r (case (rank from)
+            (0 (setf (car (castling-p board (piece-color piece))) nil))
+            (7 (setf (cdr (castling-p board (piece-color piece))) nil)))))))
+
+(defun check-castling (board from to color)
+  (multiple-value-bind (rank+ file+ length) (directions from to)
+    (and rank+ (zerop file+) (= length 2)
+         (if (plusp rank+)
+             (cdr (castling-p board color))
+             (car (castling-p board color))))))
+
+(defun make-castling (board to)
+  (let (from
+        (file (file to)))
+    (if (= (rank to) 6)                      ; short castling
+        (setf from (square 7 file)
+              to (square 5 file))
+        (setf from (square 0 file)
+              to (square 3 file)))
+    (psetf (board-square board from) nil
+           (board-square board to) (board-square board from))))
