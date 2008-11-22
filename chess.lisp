@@ -168,6 +168,17 @@
   (let ((board (find-board)))
     (retract-move board (pop (moves board)))))
 
+(defvar *promotion-alist*
+  '(("Queen" . :q)
+    ("Rook" . :r)
+    ("Knight" . :n)
+    ("Bishop" . :b)))
+
+(defun select-promotion ()
+  (menu-choose *promotion-alist*
+               :label "Promote pawn to:"
+               :scroll-bars nil))
+
 (defun chess ()
   (unless *images*
     (setf *images* (load-pieces)))

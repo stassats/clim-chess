@@ -115,10 +115,14 @@
              (minusp file+))
          (if (zerop rank+)
             (and
-             (<= length (if (= (if color 1 6) (file from)) 2 1))
+             (<= length (if (= (file from) (if color 1 6)) 2 1))
              (free-path-p board from to t))
             (and (<= length 1)
-                 (board-square board to))))))
+                 (board-square board to)))
+         (if (= (file to) (if color 7 0))
+             (cons :promotion
+                   (select-promotion))
+             t))))
 
 (defun check-q (board from to color)
   (multiple-value-bind (rank+ file+ length) (directions from to)
@@ -163,14 +167,19 @@ If move is illegal, return nil."
           never (board-square board (square rank file)))))
 
 (defun make-move (board from to color)
-  (when (check-move board from to color)
-    (push (record-move board from to) (moves board))
-    (psetf (board-square board from) nil
-           (board-square board to) (board-square board from))
-    (when (and (eql (piece-name (board-square board to)) :k)
-               (check-castling board from to color))
-      (make-castling board to))
-    (adjust-castling board from to)))
+  (let ((check (check-move board from to color)))
+    (when check
+      (push (record-move board from to) (moves board))
+      
+      (psetf (board-square board from) nil
+             (board-square board to) (if (atom check)
+                                         (board-square board from)
+                                         (piece color (cdr check))))  ; Promotion
+      (when (and (eql (piece-name (board-square board to)) :k)
+                 (check-castling board from to color))
+        (make-castling board to))
+      (adjust-castling board from to)
+      t)))
 
 (defun record-move (board from to)
   (list from to (board-square board to)))
@@ -179,6 +188,8 @@ If move is illegal, return nil."
   (destructuring-bind (from to captured) move
       (setf (board-square board from) (board-square board to)
             (board-square board to) captured)))
+
+;;; Castling
 
 (defun castling-p (board color)
   (if color
