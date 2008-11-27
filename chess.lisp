@@ -43,13 +43,13 @@
   (:menu-bar t)
   (:panes
    (board (make-pane 'board-pane
-                     :display-function '(draw-board)
+                     :display-function 'draw-board
                      :incremental-redisplay t
                      :scroll-bars nil))
    (turn :application
          :scroll-bars nil
          :incremental-redisplay t
-         :display-function '(display-turn))
+         :display-function 'display-turn)
    (interactor :interactor))
   (:layouts
    (default

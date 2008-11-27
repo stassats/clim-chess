@@ -91,56 +91,54 @@
       (check-piece-move board from to color))))
 
 (defun check-piece-move (board from to color)
-  (funcall (intern (concatenate 'string "CHECK-"
-                                (string (piece-name (board-square board from)))))
+  (funcall (intern (string (piece-name (board-square board from))))
            board from to color))
 
-(defun check-r (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+
-         (or (zerop rank+) (zerop file+))
-         (free-path-p board from to))))
-
-(defun check-n (board from to color)
+(defun n (board from to color)
+  (declare (ignore board color))
   (let ((file-diff (abs (- (file to) (file from))))
         (rank-diff (abs (- (rank to) (rank from)))))
     (or (and (= file-diff 2) (= rank-diff 1))
         (and (= file-diff 1) (= rank-diff 2)))))
 
-(defun check-p (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+
-         (if color
-             (plusp file+)
-             (minusp file+))
-         (if (zerop rank+)
-            (and
-             (<= length (if (= (file from) (if color 1 6)) 2 1))
-             (free-path-p board from to t))
-            (and (<= length 1)
-                 (board-square board to)))
-         (if (= (file to) (if color 7 0))
-             (cons :promotion
-                   (select-promotion))
-             t))))
+(defmacro def-check (name &body body)
+  `(defun ,name (board from to color)
+     (declare (ignorable board from to color))
+     (multiple-value-bind (rank+ file+ length) (directions from to)
+       (declare (ignorable file+ length))
+       (if rank+ ,@body))))
 
-(defun check-q (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+
-         (free-path-p board from to))))
+(def-check r
+  (and (or (zerop rank+) (zerop file+))
+       (free-path-p board from to)))
 
-(defun check-k (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+
-         (case length
-           (2 (check-castling board from to color))
-           (1 t)))))
+(def-check p
+  (and
+   (if color
+       (plusp file+)
+       (minusp file+))
+   (if (zerop rank+)
+       (and
+        (<= length (if (= (file from) (if color 1 6)) 2 1))
+        (free-path-p board from to t))
+       (and (<= length 1)
+            (board-square board to)))
+   (if (= (file to) (if color 7 0))
+       (cons :promotion
+             (select-promotion))
+       t)))
 
-(defun check-b (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+
-         (not (or (zerop rank+) (zerop file+)))
-         (free-path-p board from to))))
+(def-check q
+  (free-path-p board from to))
+
+(def-check k
+  (case length
+    (2 (check-castling board from to color))
+    (1 t)))
+
+(def-check b
+  (and (not (or (zerop rank+) (zerop file+)))
+       (free-path-p board from to)))
 
 ;; Changes to coordinates:
 ;;  -+    0+   ++
@@ -148,7 +146,7 @@
 ;; -0 --     -- +0
 ;;     /  |  \
 ;;  --    0-   +-
-  
+
 (defun directions (from to)
   "Return direction of the move and length of the path.
 If move is illegal, return nil."
@@ -163,14 +161,14 @@ If move is illegal, return nil."
   (multiple-value-bind (rank+ file+ length) (directions from to)
     (loop repeat (- length (if inclusive 0 1))
           for rank = (+ (rank from) rank+) then (+ rank rank+)
-          for file = (+ (file from) file+)  then (+ file file+)
+          for file = (+ (file from) file+) then (+ file file+)
           never (board-square board (square rank file)))))
 
 (defun make-move (board from to color)
   (let ((check (check-move board from to color)))
     (when check
       (push (record-move board from to) (moves board))
-      
+
       (psetf (board-square board from) nil
              (board-square board to) (if (atom check)
                                          (board-square board from)
