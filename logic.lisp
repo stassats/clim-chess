@@ -6,7 +6,7 @@
 (in-package #:clim-chess)
 
 (defvar *initial-position*
-  '(((t . :r) (t . :p) nil nil nil nil (nil . :p) (nil . :r))
+  #(((t . :r) (t . :p) nil nil nil nil (nil . :p) (nil . :r))
     ((t . :n) (t . :p) nil nil nil nil (nil . :p) (nil . :n))
     ((t . :b) (t . :p) nil nil nil nil (nil . :p) (nil . :b))
     ((t . :q) (t . :p) nil nil nil nil (nil . :p) (nil . :q))
@@ -48,7 +48,7 @@
           value)))
 
 (defun square-keyword (square)
-  "0 0 -> :a1"
+  "0 0 -> a1"
   (coerce (vector (char *letters* (rank square))
                   (digit-char (1+ (file square))))
           'simple-string))
@@ -73,10 +73,10 @@
                (if (piece-color piece) "w" "b")
                (string-downcase (piece-name piece))))
 
-(defun equal-color (piece1 piece2)
+(defun same-color-p (piece1 piece2)
   (eql (piece-color piece1) (piece-color piece2)))
 
-(defun equal-square (square1 square2)
+(defun same-square-p (square1 square2)
   (equal square1 square2))
 
 ;;;
@@ -85,14 +85,33 @@
   (let ((piece-from (board-square board from))
         (piece-to (board-square board to)))
     (unless (or (null piece-from)
-                (equal-square from to)
-                (and piece-to (equal-color piece-from piece-to))
+                (same-square-p from to)
+                (when piece-to (same-color-p piece-from piece-to))
                 (not (eql (piece-color piece-from) color)))
       (check-piece-move board from to color))))
 
 (defun check-piece-move (board from to color)
-  (funcall (intern (string (piece-name (board-square board from))))
+  (funcall (intern (symbol-name (piece-name (board-square board from)))
+                   :clim-chess)
            board from to color))
+
+
+;; Changes to coordinates
+;;  -+    0+   ++
+;;     \  |  /
+;; -0 -- 0 0 -- +0
+;;     /  |  \
+;;  --    0-   +-
+
+(defun directions (from to)
+  "Return direction of the move and length of the path.
+If move is illegal, return nil."
+  (let ((rank-diff (- (rank to) (rank from)))
+        (file-diff (- (file to) (file from))))
+    (and (or (zerop rank-diff) (zerop file-diff)  ; vertical/horizontal move
+             (= (abs rank-diff) (abs file-diff))) ; diagonal move
+         (values (signum rank-diff) (signum file-diff)
+                 (max (abs rank-diff) (abs file-diff))))))
 
 (defun n (board from to color)
   (declare (ignore board color))
@@ -101,16 +120,26 @@
     (or (and (= file-diff 2) (= rank-diff 1))
         (and (= file-diff 1) (= rank-diff 2)))))
 
+(defun %free-path-p (length rank+ file+
+                     board from &optional inclusive)
+  (loop repeat (- length (if inclusive 0 1))
+        for rank = (+ (rank from) rank+) then (+ rank rank+)
+        for file = (+ (file from) file+) then (+ file file+)
+        never (board-square board (square rank file))))
+
 (defmacro def-check (name &body body)
   `(defun ,name (board from to color)
      (declare (ignorable board from to color))
      (multiple-value-bind (rank+ file+ length) (directions from to)
        (declare (ignorable file+ length))
-       (if rank+ ,@body))))
+       (macrolet ((free-path-p (&optional inclusive)
+                    `(%free-path-p length rank+ file+
+                                   board from ,inclusive)))
+        (if rank+ ,@body)))))
 
 (def-check r
   (and (or (zerop rank+) (zerop file+))
-       (free-path-p board from to)))
+       (free-path-p)))
 
 (def-check p
   (and
@@ -119,17 +148,17 @@
        (minusp file+))
    (if (zerop rank+)
        (and
-        (<= length (if (= (file from) (if color 1 6)) 2 1))
-        (free-path-p board from to t))
+        (<= length
+            (if (= (file from) (if color 1 6)) 2 1))
+        (free-path-p t))
        (and (<= length 1)
             (board-square board to)))
    (if (= (file to) (if color 7 0))
-       (cons :promotion
-             (select-promotion))
+       (select-promotion)
        t)))
 
 (def-check q
-  (free-path-p board from to))
+  (free-path-p))
 
 (def-check k
   (case length
@@ -137,32 +166,11 @@
     (1 t)))
 
 (def-check b
-  (and (not (or (zerop rank+) (zerop file+)))
-       (free-path-p board from to)))
+  (and (not (zerop rank+))
+       (not (zerop file+))
+       (free-path-p)))
 
-;; Changes to coordinates:
-;;  -+    0+   ++
-;;     \  |  /
-;; -0 --     -- +0
-;;     /  |  \
-;;  --    0-   +-
-
-(defun directions (from to)
-  "Return direction of the move and length of the path.
-If move is illegal, return nil."
-  (let ((file-diff (- (file to) (file from)))
-        (rank-diff (- (rank to) (rank from))))
-    (and (or (zerop file-diff) (zerop rank-diff)
-             (= (abs file-diff) (abs rank-diff)))
-         (values (signum rank-diff) (signum file-diff)
-                 (max (abs file-diff) (abs rank-diff))))))
-
-(defun free-path-p (board from to &optional inclusive)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (loop repeat (- length (if inclusive 0 1))
-          for rank = (+ (rank from) rank+) then (+ rank rank+)
-          for file = (+ (file from) file+) then (+ file file+)
-          never (board-square board (square rank file)))))
+;;; 
 
 (defun make-move (board from to color)
   (let ((check (check-move board from to color)))
@@ -170,9 +178,9 @@ If move is illegal, return nil."
       (push (record-move board from to) (moves board))
 
       (psetf (board-square board from) nil
-             (board-square board to) (if (atom check)
+             (board-square board to) (if (eq check t)
                                          (board-square board from)
-                                         (piece color (cdr check))))  ; Promotion
+                                         (piece color check))) ; Promotion
       (when (and (eql (piece-name (board-square board to)) :k)
                  (check-castling board from to color))
         (make-castling board to))
@@ -200,19 +208,19 @@ If move is illegal, return nil."
       (setf (black-castling board) value)))
 
 (defun adjust-castling (board from to)
-  (let ((piece (board-square board to)))
+  (let* ((piece (board-square board to))
+         (color (piece-color piece)))
     (case (piece-name piece)
-      (:k (setf (castling board (piece-color piece)) (cons nil nil)))
+      (:k (setf (castling-p board color) (cons nil nil)))
       (:r (case (rank from)
-            (0 (setf (car (castling-p board (piece-color piece))) nil))
-            (7 (setf (cdr (castling-p board (piece-color piece))) nil)))))))
+            (0 (setf (car (castling-p board color)) nil))
+            (7 (setf (cdr (castling-p board color)) nil)))))))
 
-(defun check-castling (board from to color)
-  (multiple-value-bind (rank+ file+ length) (directions from to)
-    (and rank+ (zerop file+) (= length 2)
-         (if (plusp rank+)
-             (cdr (castling-p board color))
-             (car (castling-p board color))))))
+(def-check check-castling
+  (and (zerop file+) (= length 2)
+       (if (plusp rank+)
+           (cdr (castling-p board color))
+           (car (castling-p board color)))))
 
 (defun make-castling (board to)
   (let (from

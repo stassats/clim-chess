@@ -12,7 +12,6 @@
 (defvar *black* (make-rgb-color 209/255 139/255 71/255))
 (defvar *white* (make-rgb-color 1 206/255 158/255))
 
-(defvar *images* nil)
 (defvar *square-size* 50)
 (defvar *player-color* t)
 
@@ -39,7 +38,8 @@
     :max-width  (* *square-size* 8)))
 
 (define-application-frame chess ()
-  ()
+  ((current-color :initform t
+                  :accessor current-color))
   (:menu-bar t)
   (:panes
    (board (make-pane 'board-pane
@@ -131,6 +131,8 @@
   (loop for piece in *pieces*
         collect (cons piece (load-piece piece))))
 
+(defvar *images* (load-pieces))
+
 (defun piece-image (piece)
   (cdr (assoc piece *images* :test #'string=)))
 
@@ -180,8 +182,6 @@
                :scroll-bars nil))
 
 (defun chess ()
-  (unless *images*
-    (setf *images* (load-pieces)))
   (run-frame-top-level (make-application-frame 'chess)))
 
 ;;; dragging-output currently does not work well in mcclim
