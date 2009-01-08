@@ -82,6 +82,22 @@
 (defun same-piece-p (piece1 piece2)
   (equal piece1 piece2))
 
+(defmacro do-matrix ((x y) &body body)
+  `(loop for ,x to 7
+         do (loop for ,y to 7
+                  do (progn ,@body))))
+
+(defmacro do-board ((piece board &optional square) &body body)
+  (let ((x (gensym "RANK"))
+        (y (gensym "FILE"))
+        (%board (gensym "BOARD"))
+        (%square (or square (gensym "SQUARE"))))
+    `(let ((,%board ,board))
+       (do-matrix (,x ,y)
+         (let* ((,%square (square ,x ,y))
+                (,piece (board-square ,%board ,%square)))
+           ,@body)))))
+
 ;;;
 
 (defun check-move (board from to color)
@@ -239,14 +255,10 @@ If move is illegal, return nil."
 ;;;
 
 (defun find-king (board color)
-  (loop with piece = (piece color :k)
-        for rank to 7
-        when (loop for file to 7
-                   for square = (square rank file)
-                   when (same-piece-p piece
-                                      (board-square board square))
-                   return square)
-        return it))
+  (let ((king (piece color :k)))
+    (do-board (piece board square)
+      (when (same-piece-p piece king)
+        (return-from find-king square)))))
 
 (defvar *moves* '((-1  .  1) (0  .  1) (1  .  1)
                   (-1  .  0)           (1  .  0)
@@ -255,8 +267,8 @@ If move is illegal, return nil."
 (defun check-p (board color)
   (let ((king-square (find-king board color)))
     (or (attacked-by-knight-p board king-square)
-     (loop for (rank+ . file+) in *moves*
-           thereis (attacked-from-p board king-square rank+ file+)))))
+        (loop for (rank+ . file+) in *moves*
+              thereis (attacked-from-p board king-square rank+ file+)))))
 
 (defun attacked-from-p (board king-square rank+ file+)
   (loop for rank = (+ (rank king-square) rank+) then (+ rank rank+)

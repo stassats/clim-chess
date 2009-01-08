@@ -68,9 +68,8 @@
 
 (defun draw-board (frame pane)
   (declare (ignore frame))
-  (loop for x to 7 do
-        (loop for y to 7
-              do (draw-square pane x y))))
+  (do-matrix (x y)
+    (draw-square pane x y)))
 
 (defun square-occupied-by (piece)
   (cond ((null piece) 'square)
@@ -106,11 +105,9 @@
 (define-presentation-method accept ((type square) stream
                                     (view textual-view) &key)
   (completing-from-suggestions (stream)
-    (loop for x to 7 do
-          (loop for y to 7
-                for square = (square x y)
-                do (suggest (square-keyword square)
-                            square)))))
+    (do-matrix (x y)
+      (let ((square (square x y)))
+        (suggest (square-keyword square) square)))))
 
 (define-presentation-method present
     (square (type square) stream (view textual-view) &key)
