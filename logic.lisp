@@ -40,6 +40,11 @@
   (and (>= 7 (rank square) 0)
        (>= 7 (file square) 0)))
 
+(defun add-square (square add)
+  "(4 . 0) + (1 . 1) => (5 . 1)"
+  (square (+ (rank square) (rank add))
+          (+ (file square) (file add))))
+
 (defun board-square (board square)
   (when (valid-square-p square)
     (aref (contents board) (rank square) (file square))))
@@ -48,6 +53,11 @@
   (when (valid-square-p square)
     (setf (aref (contents board) (rank square) (file square))
           value)))
+
+(defun find-king (board color)
+  (if color
+      (white-king board)
+      (black-king board)))
 
 (defun square-keyword (square)
   "0 0 -> a1"
@@ -105,7 +115,8 @@
 (defun check-move (board from to color)
   (let ((piece-from (board-square board from))
         (piece-to (board-square board to)))
-    (unless (or (null piece-from)
+    (unless (or (not (valid-square-p to))
+                (null piece-from)
                 (same-square-p from to)
                 (when piece-to (same-color-p piece-from piece-to))
                 (not (eql (piece-color piece-from) color)))
@@ -134,19 +145,10 @@ If move is illegal, return nil."
          (values (signum rank-diff) (signum file-diff)
                  (max (abs rank-diff) (abs file-diff))))))
 
-(defun n (board from to color)
-  (declare (ignore board color))
-  (let ((file-diff (abs (- (file to) (file from))))
-        (rank-diff (abs (- (rank to) (rank from)))))
-    (or (and (= file-diff 2) (= rank-diff 1))
-        (and (= file-diff 1) (= rank-diff 2)))))
-
-(defun %free-path-p (length rank+ file+
-                     board from &optional inclusive)
+(defun %free-path-p (length diff board from &optional inclusive)
   (loop repeat (- length (if inclusive 0 1))
-        for rank = (+ (rank from) rank+) then (+ rank rank+)
-        for file = (+ (file from) file+) then (+ file file+)
-        never (board-square board (square rank file))))
+        for square = (add-square from diff) then (add-square square diff)
+        never (board-square board square)))
 
 (defmacro def-check (name &body body)
   `(defun ,name (board from to color)
@@ -154,7 +156,7 @@ If move is illegal, return nil."
      (multiple-value-bind (rank+ file+ length) (directions from to)
        (declare (ignorable file+ length))
        (macrolet ((free-path-p (&optional inclusive)
-                    `(%free-path-p length rank+ file+
+                    `(%free-path-p length (cons rank+ file+)
                                    board from ,inclusive)))
         (if rank+ ,@body)))))
 
@@ -191,7 +193,14 @@ If move is illegal, return nil."
        (not (zerop file+))
        (free-path-p)))
 
-;;; 
+(defun n (board from to color)
+  (declare (ignore board color))
+  (let ((file-diff (abs (- (file to) (file from))))
+        (rank-diff (abs (- (rank to) (rank from)))))
+    (or (and (= file-diff 2) (= rank-diff 1))
+        (and (= file-diff 1) (= rank-diff 2)))))
+
+;;;
 
 (defun make-move (board from to color)
   (let ((check (check-move board from to color)))
@@ -259,41 +268,30 @@ If move is illegal, return nil."
 
 ;;;
 
-(defun find-king (board color)
-  (if color
-      (white-king board)
-      (black-king board)))
-
 (defvar *moves* '((-1  .  1) (0  .  1) (1  .  1)
                   (-1  .  0)           (1  .  0)
                   (-1  . -1) (0  . -1) (1  . -1)))
 
-(defun check-p (board color)
-  (let ((king-square (find-king board color)))
-    (or (attacked-by-knight-p board king-square)
-        (loop for (rank+ . file+) in *moves*
-              thereis (attacked-from-p board king-square rank+ file+)))))
+(defun check-p (board king-square color)
+  (or (attacked-by-knight-p board king-square color)
+      (loop for diff in *moves*
+            thereis (attacked-from-p board king-square color diff))))
 
-(defun attacked-from-p (board king-square rank+ file+)
-  (loop for rank = (+ (rank king-square) rank+) then (+ rank rank+)
-        for file = (+ (file king-square) file+) then (+ file file+)
-        for square = (square rank file)
+(defun attacked-from-p (board king-square color diff)
+  (loop for square = (add-square king-square diff)
+        then (add-square square diff)
         while (valid-square-p square)
         until (board-square board square)
         finally (return
-                  (check-move board square king-square
-                              (not (piece-color king-square))))))
+                  (check-move board square king-square (not color)))))
 
 (defvar *knight-moves* '((-1  .  2) (1  .  2)
                          (-2  .  1) (2  .  1)
                          (-2  . -1) (2  . -1)
                          (-1  . -2) (1  . -2)))
 
-(defun attacked-by-knight-p (board king-square)
-  (loop for (rank+ . file+) in *knight-moves*
-        thereis (n board
-                   (square (+ (rank king-square) rank+)
-                           (+ (file king-square) file+))
-                   king-square
-                   (not (piece-color king-square)))))
+(defun attacked-by-knight-p (board king-square color)
+  (loop for diff in *knight-moves*
+        for square = (add-square king-square diff)
+        thereis (check-move board square king-square (not color))))
 
