@@ -24,6 +24,8 @@
              (make-array '(8 8) :initial-contents *initial-position*)
              :accessor contents)
    (moves :initform nil :accessor moves)
+   (white-king :initform (keyword-square "e1") :accessor white-king)
+   (black-king :initform (keyword-square "e8") :accessor black-king)
    (white-castling :initform (cons t t)  ; long - short
                    :accessor white-castling)
    (black-castling :initform (cons t t)
@@ -200,9 +202,12 @@ If move is illegal, return nil."
              (board-square board to) (if (eq check t)
                                          (board-square board from)
                                          (piece color (select-promotion))))
-      (when (and (eql (piece-name (board-square board to)) :k)
-                 (check-castling board from to color))
-        (make-castling board to))
+      (when (eql (piece-name (board-square board to)) :k)
+        (if color
+            (setf (white-king board) to)
+            (setf (black-king board) to))
+        (when (check-castling board from to color)
+            (make-castling board to)))
       (adjust-castling board from to)
       t)))
 
@@ -255,10 +260,9 @@ If move is illegal, return nil."
 ;;;
 
 (defun find-king (board color)
-  (let ((king (piece color :k)))
-    (do-board (piece board square)
-      (when (same-piece-p piece king)
-        (return-from find-king square)))))
+  (if color
+      (white-king board)
+      (black-king board)))
 
 (defvar *moves* '((-1  .  1) (0  .  1) (1  .  1)
                   (-1  .  0)           (1  .  0)
@@ -292,3 +296,4 @@ If move is illegal, return nil."
                            (+ (file king-square) file+))
                    king-square
                    (not (piece-color king-square)))))
+
