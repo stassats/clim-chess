@@ -268,28 +268,33 @@ If move is illegal, return nil."
                   (-1  . -1) (0  . -1) (1  . -1)))
 
 (defun check-p (board king-square color)
-  (or (attacked-by-knight-p board king-square color)
-      (loop for diff in *moves*
-            thereis (attacked-from-p board king-square color diff))))
+  (append (attacked-by-knight-p board king-square color)
+          (loop for diff in *moves*
+                when (attacked-from-p board king-square color diff)
+                collect it)))
 
-(defun attacked-from-p (board king-square color diff)
-  (loop for square = (add-square king-square diff)
-        then (add-square square diff)
-        while (valid-square-p square)
-        until (board-square board square)
+(defun attacked-from-p (board square color diff)
+  (loop for from = (add-square square diff)
+        then (add-square from diff)
+        while (valid-square-p from)
+        until (board-square board from)
         finally (return
-                  (and (check-move board square king-square (not color))
-                       square))))
+                  (and (check-move board from square (not color))
+                       from))))
 
 (defvar *knight-moves* '((-1  .  2) (1  .  2)
                          (-2  .  1) (2  .  1)
                          (-2  . -1) (2  . -1)
                          (-1  . -2) (1  . -2)))
 
-(defun attacked-by-knight-p (board king-square color)
+(defun attacked-by-knight-p (board square color)
   (loop for diff in *knight-moves*
-        for square = (add-square king-square diff)
-        thereis (check-move board square king-square (not color))))
+        for knight-square = (add-square square diff)
+        when (check-move board knight-square square (not color))
+        collect knight-square into result
+        and count 1 into count
+        when (= count 2) do (loop-finish)
+        finally (return result)))
 
 ;;; Checkmate
 
@@ -297,7 +302,29 @@ If move is illegal, return nil."
   (let ((king-square (find-king board color)))
     (loop for diff in *moves*
           for square = (add-square king-square diff)
-          then (add-square square diff)
           when (and (valid-square-p square)
-                    (not (check-p board square color))) ; wrong, there is no king on the square
+                    (not (eql color (piece-color (board-square board square))))
+                    ; won't work if on square is a piece of opposite color
+                    (not (check-p board square color)))
           return t)))
+
+(def-check %can-defend-from-p
+  (loop repeat length
+        for square = from then (add-square square (cons rank+ file+))
+        for check = (check-p board square color)
+        when check return (or (cdr check)
+                              (not (same-square-p to (car check))))))
+
+(defun can-defend-from-p (board from color)
+  ;; we can only capture a knight
+  (if (eql :n (piece-name (board-square board from)))
+      (check-p board from (not color))
+      (%can-defend-from-p board from (find-king board color) (not color))))
+
+(defun checkmate-p (board color attacks)
+  (not
+   (or (can-king-move-p board color)
+       ;; if king is attacked by more than one piece
+       ;; and cannot move, he is dead
+       (when (= (length attacks) 1)
+         (can-defend-from-p board (car attacks) color)))))
