@@ -113,14 +113,14 @@
 ;;;
 
 (defun check-move (board from to color)
-  (let ((piece-from (board-square board from))
-        (piece-to (board-square board to)))
-    (unless (or (not (valid-square-p to))
-                (null piece-from)
-                (same-square-p from to)
-                (when piece-to (same-color-p piece-from piece-to))
-                (not (eql (piece-color piece-from) color)))
-      (check-piece-move board from to color))))
+  (when (and (valid-square-p from) (valid-square-p to))
+    (let ((piece-from (board-square board from))
+          (piece-to (board-square board to)))
+      (unless (or (null piece-from)
+                  (same-square-p from to)
+                  (when piece-to (same-color-p piece-from piece-to))
+                  (not (eql (piece-color piece-from) color)))
+        (check-piece-move board from to color)))))
 
 (defun check-piece-move (board from to color)
   (funcall (intern (symbol-name (piece-name (board-square board from)))
@@ -152,13 +152,13 @@ If move is illegal, return nil."
 
 (defmacro def-check (name &body body)
   `(defun ,name (board from to color)
-     (declare (ignorable board from to color))
+     (declare (ignorable board color))
      (multiple-value-bind (rank+ file+ length) (directions from to)
        (declare (ignorable file+ length))
        (macrolet ((free-path-p (&optional inclusive)
                     `(%free-path-p length (cons rank+ file+)
                                    board from ,inclusive)))
-        (if rank+ ,@body)))))
+         (when rank+ ,@body)))))
 
 (def-check r
   (and (or (zerop rank+) (zerop file+))
@@ -167,8 +167,8 @@ If move is illegal, return nil."
 (def-check p
   (and
    (if color
-       (plusp file+)
-       (minusp file+))
+       (plusp file+)   ; up
+       (minusp file+)) ; down
    (if (zerop rank+)
        (and
         (<= length
@@ -205,28 +205,23 @@ If move is illegal, return nil."
 (defun make-move (board from to color)
   (let ((check (check-move board from to color)))
     (when check
-      (push (record-move board from to) (moves board))
-
-      (psetf (board-square board from) nil
-             (board-square board to) (if (eq check t)
-                                         (board-square board from)
-                                         (piece color (select-promotion))))
+      (setf (board-square board to) (if (eq check t)
+                                        (board-square board from)
+                                        (piece color (select-promotion)))
+            (board-square board from) nil)
       (when (eql (piece-name (board-square board to)) :k)
         (if color
             (setf (white-king board) to)
             (setf (black-king board) to))
         (when (check-castling board from to color)
-            (make-castling board to)))
+          (make-castling board to)))
       (adjust-castling board from to)
       t)))
 
-(defun record-move (board from to)
-  (list from to (board-square board to)))
-
 (defun retract-move (board move)
   (destructuring-bind (from to captured) move
-      (setf (board-square board from) (board-square board to)
-            (board-square board to) captured)))
+    (setf (board-square board from) (board-square board to)
+          (board-square board to) captured)))
 
 ;;; Castling
 
@@ -242,12 +237,12 @@ If move is illegal, return nil."
 
 (defun adjust-castling (board from to)
   (let* ((piece (board-square board to))
-         (color (piece-color piece)))
+         (castling (castling-p board (piece-color piece))))
     (case (piece-name piece)
-      (:k (setf (castling-p board color) (cons nil nil)))
+      (:k (setf (car castling) nil (cdr castling) nil))
       (:r (case (rank from)
-            (0 (setf (car (castling-p board color)) nil))
-            (7 (setf (cdr (castling-p board color)) nil)))))))
+            (0 (setf (car castling) nil))
+            (7 (setf (cdr castling) nil)))))))
 
 (def-check check-castling
   (and (zerop file+) (= length 2)
@@ -258,13 +253,13 @@ If move is illegal, return nil."
 (defun make-castling (board to)
   (let (from
         (file (file to)))
-    (if (= (rank to) 6)                      ; short castling
+    (if (= (rank to) 6) ; short castling
         (setf from (square 7 file)
               to (square 5 file))
         (setf from (square 0 file)
               to (square 3 file)))
-    (psetf (board-square board from) nil
-           (board-square board to) (board-square board from))))
+    (setf (board-square board to) (board-square board from)
+          (board-square board from) nil)))
 
 ;;;
 
@@ -283,7 +278,8 @@ If move is illegal, return nil."
         while (valid-square-p square)
         until (board-square board square)
         finally (return
-                  (check-move board square king-square (not color)))))
+                  (and (check-move board square king-square (not color))
+                       square))))
 
 (defvar *knight-moves* '((-1  .  2) (1  .  2)
                          (-2  .  1) (2  .  1)
@@ -295,3 +291,13 @@ If move is illegal, return nil."
         for square = (add-square king-square diff)
         thereis (check-move board square king-square (not color))))
 
+;;; Checkmate
+
+(defun can-king-move-p (board color)
+  (let ((king-square (find-king board color)))
+    (loop for diff in *moves*
+          for square = (add-square king-square diff)
+          then (add-square square diff)
+          when (and (valid-square-p square)
+                    (not (check-p board square color))) ; wrong, there is no king on the square
+          return t)))
