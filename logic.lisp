@@ -6,14 +6,14 @@
 (in-package #:clim-chess)
 
 (defvar *initial-position*
-  #(((t . :r) (t . :p) nil nil nil nil (nil . :p) (nil . :r))
-    ((t . :n) (t . :p) nil nil nil nil (nil . :p) (nil . :n))
-    ((t . :b) (t . :p) nil nil nil nil (nil . :p) (nil . :b))
-    ((t . :q) (t . :p) nil nil nil nil (nil . :p) (nil . :q))
-    ((t . :k) (t . :p) nil nil nil nil (nil . :p) (nil . :k))
-    ((t . :b) (t . :p) nil nil nil nil (nil . :p) (nil . :b))
-    ((t . :n) (t . :p) nil nil nil nil (nil . :p) (nil . :n))
-    ((t . :r) (t . :p) nil nil nil nil (nil . :p) (nil . :r))))
+  #(((t . #\r) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\r))
+    ((t . #\n) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\n))
+    ((t . #\b) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\b))
+    ((t . #\q) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\q))
+    ((t . #\k) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\k))
+    ((t . #\b) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\b))
+    ((t . #\n) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\n))
+    ((t . #\r) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\r))))
 
 (defvar *letters* "abcdefgh")
 (defvar *pieces* '("wr" "wn" "wb" "wq" "wk" "wp"
@@ -21,8 +21,7 @@
 
 (defclass board ()
   ((contents :initform
-             (make-array '(8 8) :initial-contents *initial-position*
-                         :element-type 'cons)
+             (make-array '(8 8) :initial-contents *initial-position*)
              :reader contents)
    (moves :initform nil :accessor moves)
    (white-king :initform (keyword-square "e1") :accessor white-king)
@@ -76,15 +75,15 @@
 (defun piece  (color name) (cons color name))
 
 (defun keyword-piece (piece)
-  "wp -> (t . :p)"
+  "wp -> (t . #\p)"
   (piece (char-equal (char piece 0) #\w)
-         (intern (string (char-upcase (char piece 1))) :keyword)))
+         (char-downcase (char piece 1))))
 
 (defun piece-keyword (piece)
-  "(t . :p) -> wp"
+  "(t . #\p) -> wp"
   (concatenate 'string
                (if (piece-color piece) "w" "b")
-               (string-downcase (piece-name piece))))
+               (string (piece-name piece))))
 
 (defun same-color-p (piece1 piece2)
   (eql (piece-color piece1) (piece-color piece2)))
@@ -117,6 +116,10 @@
       (setf (board-square new-board square) piece))
     new-board))
 
+(defun move (board from to &optional promote)
+  (setf (board-square board to) (or promote (board-square board from))
+        (board-square board from) nil))
+
 ;;;
 
 (defun check-move (board from to color)
@@ -130,7 +133,7 @@
         (check-piece-move board from to color)))))
 
 (defun check-piece-move (board from to color)
-  (funcall (find-symbol (symbol-name (piece-name (board-square board from)))
+  (funcall (find-symbol (string-upcase (piece-name (board-square board from)))
                         :clim-chess)
            board from to color))
 
@@ -183,7 +186,7 @@ If move is illegal, return nil."
        (and (<= length 1)
             (board-square board to)))
    (if (= (file to) (if color 7 0))
-       :promotion
+       'promotion
        t)))
 
 (def-check q
@@ -191,7 +194,8 @@ If move is illegal, return nil."
 
 (def-check k
   (case length
-    (2 (check-castling board from to color))
+    (2 (when (check-castling board from to color)
+         'castling))
     (1 t)))
 
 (def-check b
@@ -209,19 +213,12 @@ If move is illegal, return nil."
 ;;;
 
 (defun make-move (board from to color)
-  (let ((check (check-move board from to color)))
-    (when check
-      (setf (board-square board to) (if (eq check t)
-                                        (board-square board from)
-                                        (piece color (select-promotion)))
-            (board-square board from) nil)
-      (when (eql (piece-name (board-square board to)) :k)
-        (if color
-            (setf (white-king board) to)
-            (setf (black-king board) to))
-        (when (check-castling board from to color)
-          (make-castling board to)))
-      (adjust-castling board from to)
+  (let ((movep (check-move board from to color)))
+    (when movep
+      (move board from to
+            (when (eq movep 'promotion)
+              (piece color (select-promotion))))
+      (adjust-castling board from to movep)
       t)))
 
 (defun retract-move (board move)
@@ -231,30 +228,30 @@ If move is illegal, return nil."
 
 ;;; Castling
 
-(defun castling-p (board color)
+(defun castlings (board color)
   (if color
       (white-castling board)
       (black-castling board)))
 
-(defun (setf castling-p) (value board color)
-  (if color
-      (setf (white-castling board) value)
-      (setf (black-castling board) value)))
-
-(defun adjust-castling (board from to)
+(defun adjust-castling (board from to castling)
   (let* ((piece (board-square board to))
-         (castling (castling-p board (piece-color piece))))
+         (castlings (castlings board (piece-color piece))))
     (case (piece-name piece)
-      (:k (setf (car castling) nil (cdr castling) nil))
-      (:r (case (rank from)
-            (0 (setf (car castling) nil))
-            (7 (setf (cdr castling) nil)))))))
+      (#\k (if (piece-color piece)
+               (setf (white-king board) to)
+               (setf (black-king board) to))
+           (when (eq castling 'castling)
+             (make-castling board to))
+           (setf (car castlings) nil (cdr castlings) nil))
+      (#\r (case (rank from)
+             (0 (setf (car castlings) nil))
+             (7 (setf (cdr castlings) nil)))))))
 
 (def-check check-castling
   (and (zerop file+) (= length 2)
        (if (plusp rank+)
-           (cdr (castling-p board color))
-           (car (castling-p board color)))))
+           (cdr (castlings board color))
+           (car (castlings board color)))))
 
 (defun make-castling (board to)
   (let (from
@@ -264,8 +261,7 @@ If move is illegal, return nil."
               to (square 5 file))
         (setf from (square 0 file)
               to (square 3 file)))
-    (setf (board-square board to) (board-square board from)
-          (board-square board from) nil)))
+    (move board from to)))
 
 ;;;
 
@@ -308,10 +304,10 @@ If move is illegal, return nil."
   (let ((king-square (find-king board color)))
     (loop for diff in *moves*
           for square = (add-square king-square diff)
-          when (and (valid-square-p square)
-                    (not (eql color (piece-color (board-square board square))))
-                    ; FIXME: won't work if on square is a piece of opposite color
-                    (not (check-p board square color)))
+          when (check-move board king-square square color)
+          do (let ((board (copy-board board)))
+               (move board king-square square)
+               (not (check-p board square color)))
           return t)))
 
 (def-check %can-defend-from-p
@@ -324,7 +320,7 @@ If move is illegal, return nil."
 
 (defun can-defend-from-p (board from color)
   ;; we can only capture a knight
-  (if (eql :n (piece-name (board-square board from)))
+  (if (eql #\n (piece-name (board-square board from)))
       (check-p board from (not color))
       (%can-defend-from-p board from (find-king board color) (not color))))
 
