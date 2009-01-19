@@ -21,8 +21,9 @@
 
 (defclass board ()
   ((contents :initform
-             (make-array '(8 8) :initial-contents *initial-position*)
-             :accessor contents)
+             (make-array '(8 8) :initial-contents *initial-position*
+                         :element-type 'cons)
+             :reader contents)
    (moves :initform nil :accessor moves)
    (white-king :initform (keyword-square "e1") :accessor white-king)
    (black-king :initform (keyword-square "e8") :accessor black-king)
@@ -110,6 +111,12 @@
                 (,piece (board-square ,%board ,%square)))
            ,@body)))))
 
+(defun copy-board (board)
+  (let ((new-board (make-instance 'board)))
+    (do-board (piece board square)
+      (setf (board-square new-board square) piece))
+    new-board))
+
 ;;;
 
 (defun check-move (board from to color)
@@ -123,10 +130,9 @@
         (check-piece-move board from to color)))))
 
 (defun check-piece-move (board from to color)
-  (funcall (intern (symbol-name (piece-name (board-square board from)))
-                   :clim-chess)
+  (funcall (find-symbol (symbol-name (piece-name (board-square board from)))
+                        :clim-chess)
            board from to color))
-
 
 ;; Changes to coordinates
 ;;  -+    0+   ++
@@ -304,11 +310,12 @@ If move is illegal, return nil."
           for square = (add-square king-square diff)
           when (and (valid-square-p square)
                     (not (eql color (piece-color (board-square board square))))
-                    ; won't work if on square is a piece of opposite color
+                    ; FIXME: won't work if on square is a piece of opposite color
                     (not (check-p board square color)))
           return t)))
 
 (def-check %can-defend-from-p
+  ;; FIXME: this move can expose king to another attack
   (loop repeat length
         for square = from then (add-square square (cons rank+ file+))
         for check = (check-p board square color)
