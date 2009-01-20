@@ -257,8 +257,11 @@ If move is illegal, return nil."
 (def-check check-castling
   (and (zerop file+) (= length 2)
        (if (plusp rank+)
-           (cdr (castlings board color))
-           (car (castlings board color)))))
+           (and
+            (cdr (castlings board color))
+            (%free-path-p 3 '(1 . 0) board from))
+           (and (car (castlings board color))
+                (%free-path-p 4 '(-1 . 0) board from)))))
 
 (defun make-castling (board to)
   (let (from
