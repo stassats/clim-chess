@@ -29,7 +29,9 @@
    (white-castling :initform (cons t t)  ; long - short
                    :accessor white-castling)
    (black-castling :initform (cons t t)
-                   :accessor black-castling)))
+                   :accessor black-castling)
+   (white-en-passant :initform nil :accessor white-en-passant)
+   (black-en-passant :initform nil :accessor black-en-passant)))
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -156,8 +158,8 @@ If move is illegal, return nil."
 
 (defun %free-path-p (length diff board from &optional inclusive)
   (loop repeat (- length (if inclusive 0 1))
-        for square = (add-square from diff) then (add-square square diff)
-        never (board-square board square)))
+        do (setf from (add-square from diff))
+        never (board-square board from)))
 
 (defmacro def-check (name &body body)
   `(defun ,name (board from to color)
@@ -178,13 +180,17 @@ If move is illegal, return nil."
    (if color
        (plusp file+)   ; up
        (minusp file+)) ; down
-   (if (zerop rank+)
+   (if (zerop rank+)   ; vertical move
        (and
-        (<= length
-            (if (= (file from) (if color 1 6)) 2 1))
-        (free-path-p t))
-       (and (<= length 1)
-            (board-square board to)))
+        (free-path-p t)
+        (if (and (= (file from) (if color 1 6))
+                 (= length 2))
+            (return-from p 'en-passant)
+            (= length 1)))
+       (when (= length 1)
+         (if (same-square-p to (en-passant board (not color)))
+             (return-from p 'en-passant*)
+             (board-square board to))))
    (if (= (file to) (if color 7 0))
        'promotion
        t)))
@@ -219,6 +225,7 @@ If move is illegal, return nil."
             (when (eq movep 'promotion)
               (piece color (select-promotion))))
       (adjust-castling board from to movep)
+      (adjust-en-passant board to color movep)
       t)))
 
 (defun retract-move (board move)
@@ -263,7 +270,29 @@ If move is illegal, return nil."
               to (square 3 file)))
     (move board from to)))
 
-;;;
+;;; En-passant
+
+(defun en-passant (board color)
+  (if color
+      (white-en-passant board)
+      (black-en-passant board)))
+
+(defun (setf en-passant) (value board color)
+  (if color
+      (setf (white-en-passant board) value)
+      (setf (black-en-passant board) value)))
+
+(defun adjust-en-passant (board to color en-passant-p)
+  (let ((square-above (add-square to (if color
+                                         '(0 . -1)
+                                         '(0 . 1)))))
+    (when (eql en-passant-p 'en-passant*)
+      (setf (board-square board square-above) nil))
+    (setf (en-passant board color)
+          (when (eql en-passant-p 'en-passant)
+            square-above))))
+
+;;; Check
 
 (defvar *moves* '((-1  .  1) (0  .  1) (1  .  1)
                   (-1  .  0)           (1  .  0)
