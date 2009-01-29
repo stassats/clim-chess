@@ -30,8 +30,9 @@
                    :accessor white-castling)
    (black-castling :initform (cons t t)
                    :accessor black-castling)
-   (white-en-passant :initform nil :accessor white-en-passant)
-   (black-en-passant :initform nil :accessor black-en-passant)))
+   (en-passant :initform nil :accessor en-passant)
+   (check :initform nil :accessor check)
+   (checkmate :initform nil :accessor checkmate)))
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -121,14 +122,13 @@
                                 if consp do (setf i (car i))
                                 collect `(,i new-board)
                                 collect (if consp
-                                            (copy-list `(,i board))
+                                            `(copy-list (,i board))
                                             `(,i board))))))
       (do-board (piece board square)
         (setf (board-square new-board square) piece))
-      (copy (white-en-passant black-en-passant
+      (copy (en-passant check (moves)
              white-king black-king
-             (white-castling) (black-castling)
-             (moves))))
+             (white-castling) (black-castling))))
     new-board))
 
 (defun move (board from to &optional promote)
@@ -201,7 +201,7 @@ If move is illegal, return nil."
             (return-from p 'en-passant)
             (= length 1)))
        (when (= length 1)
-         (if (same-square-p to (en-passant board (not color)))
+         (if (same-square-p to (en-passant board))
              (return-from p 'en-passant*)
              (board-square board to))))
    (if (= (file to) (if color 7 0))
@@ -232,10 +232,15 @@ If move is illegal, return nil."
 ;;;
 
 (defun make-move (board from to color &optional promotion)
-  (let ((move (test-move board from to color promotion)))
-    (when move
-      (copy-board move board)
-      t)))
+  (unless (checkmate board)
+    (let ((move (test-move board from to color promotion)))
+      (when move
+        (copy-board move board)
+        (let ((check (check-p board (not color))))
+          (when (setf (check board) (and check t))
+            (when (checkmate-p board (not color) check)
+              (setf (checkmate board) t))))
+        t))))
 
 (defun test-move (board from to color &optional promotion)
   (let* ((board (copy-board board))
@@ -247,8 +252,8 @@ If move is illegal, return nil."
                                (select-promotion)))))
       (adjust-castling board from to movep)
       (adjust-en-passant board to color movep)
-      (unless (check-p board (find-king board color) color)
-       board))))
+      (unless (check-p board color)
+        board))))
 
 (defun retract-move (board move)
   (destructuring-bind (from to captured) move
@@ -277,7 +282,8 @@ If move is illegal, return nil."
              (7 (setf (cdr castlings) nil)))))))
 
 (def-check check-castling
-  (and (zerop file+) (= length 2)
+  (and (not (check board))
+       (zerop file+) (= length 2)
        (if (plusp rank+)
            (and
             (cdr (castlings board color))
@@ -297,23 +303,13 @@ If move is illegal, return nil."
 
 ;;; En-passant
 
-(defun en-passant (board color)
-  (if color
-      (white-en-passant board)
-      (black-en-passant board)))
-
-(defun (setf en-passant) (value board color)
-  (if color
-      (setf (white-en-passant board) value)
-      (setf (black-en-passant board) value)))
-
 (defun adjust-en-passant (board to color en-passant-p)
   (let ((square-above (add-square to (if color
                                          '(0 . -1)
                                          '(0 . 1)))))
     (when (eql en-passant-p 'en-passant*)
       (setf (board-square board square-above) nil))
-    (setf (en-passant board color)
+    (setf (en-passant board)
           (when (eql en-passant-p 'en-passant)
             square-above))))
 
@@ -323,19 +319,24 @@ If move is illegal, return nil."
                   (-1  .  0)           (1  .  0)
                   (-1  . -1) (0  . -1) (1  . -1)))
 
-(defun check-p (board king-square color)
-  (append (attacked-by-knight-p board king-square color)
+(defun check-p (board color)
+  (square-attacked-by board (find-king board color) color))
+
+(defun square-attacked-by (board square color &optional test-move)
+  (append (attacks-by-knight board square color test-move)
           (loop for diff in *moves*
-                when (attacked-from-p board king-square color diff)
+                when (attacked-from-p board square color diff test-move)
                 collect it)))
 
-(defun attacked-from-p (board square color diff)
+(defun attacked-from-p (board square color diff &optional test-move)
   (loop for from = (add-square square diff)
         then (add-square from diff)
         while (valid-square-p from)
         until (board-square board from)
         finally (return
-                  (and (check-move board from square (not color))
+                  (and (if test-move
+                           (test-move board from square (not color) nil)
+                           (check-move board from square (not color)))
                        from))))
 
 (defvar *knight-moves* '((-1  .  2) (1  .  2)
@@ -343,10 +344,12 @@ If move is illegal, return nil."
                          (-2  . -1) (2  . -1)
                          (-1  . -2) (1  . -2)))
 
-(defun attacked-by-knight-p (board square color)
+(defun attacks-by-knight (board square color &optional test-move)
   (loop for diff in *knight-moves*
         for knight-square = (add-square square diff)
-        when (check-move board knight-square square (not color))
+        when (if test-move
+                 (test-move board knight-square square (not color) nil)
+                 (check-move board knight-square square (not color)))
         collect knight-square into result
         and count 1 into count
         when (= count 2) do (loop-finish)
@@ -358,24 +361,18 @@ If move is illegal, return nil."
   (let ((king-square (find-king board color)))
     (loop for diff in *moves*
           for square = (add-square king-square diff)
-          when (check-move board king-square square color)
-          do (let ((board (copy-board board)))
-               (move board king-square square)
-               (not (check-p board square color)))
-          return t)))
+          thereis (test-move board king-square square
+                             color))))
 
 (def-check %can-defend-from-p
-  ;; FIXME: this move can expose king to another attack
   (loop repeat length
         for square = from then (add-square square (cons rank+ file+))
-        for check = (check-p board square color)
-        when check return (or (cdr check)
-                              (not (same-square-p to (car check))))))
+        thereis (square-attacked-by board square color t)))
 
 (defun can-defend-from-p (board from color)
   ;; we can only capture a knight
   (if (eql #\n (piece-name (board-square board from)))
-      (check-p board from (not color))
+      (square-attacked-by board from (not color) t)
       (%can-defend-from-p board from (find-king board color) (not color))))
 
 (defun checkmate-p (board color attacks)
