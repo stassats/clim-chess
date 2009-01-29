@@ -32,7 +32,8 @@
                    :accessor black-castling)
    (en-passant :initform nil :accessor en-passant)
    (check :initform nil :accessor check)
-   (checkmate :initform nil :accessor checkmate)))
+   (checkmate :initform nil :accessor checkmate)
+   (next-to-move :initform t :accessor next-to-move)))
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -231,15 +232,17 @@ If move is illegal, return nil."
 
 ;;;
 
-(defun make-move (board from to color &optional promotion)
+(defun make-move (board from to)
   (unless (checkmate board)
-    (let ((move (test-move board from to color promotion)))
+    (let* ((color (next-to-move board))
+           (move (test-move board from to color)))
       (when move
         (copy-board move board)
         (let ((check (check-p board (not color))))
           (when (setf (check board) (and check t))
             (when (checkmate-p board (not color) check)
               (setf (checkmate board) t))))
+        (setf (next-to-move board) (not color))
         t))))
 
 (defun test-move (board from to color &optional promotion)

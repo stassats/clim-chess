@@ -14,7 +14,6 @@
 
 (defvar *square-size* 50)
 (defvar *board-size* (* *square-size* 8))
-(defvar *player-color* t)
 
 (define-presentation-type square ())
 
@@ -38,9 +37,7 @@
     :max-height *board-size*
     :max-width  *board-size*))
 
-(define-application-frame chess ()
-  ((current-color :initform t
-                  :accessor current-color))
+(define-application-frame chess () ()
   (:menu-bar t)
   (:panes
    (board (make-pane 'board-pane
@@ -63,9 +60,11 @@
 
 (defun display-turn (frame pane)
   (declare (ignore frame))
-  (setf (medium-background pane)
-        (if *player-color* *white* *black*))
-  (draw-text* pane (format nil "~:[Black~;White~]'s turn." *player-color*) 10 15))
+  (let ((board (find-board)))
+    (draw-text* pane (format nil "~:[Black~;White~]'s turn." (next-to-move board))
+                10 15)
+    (when (checkmate board)
+      (draw-text* pane "Checkmate." 10 30))))
 
 (defun draw-board (frame pane)
   (declare (ignore frame))
@@ -134,8 +133,8 @@
 (defun piece-image (piece)
   (cdr (assoc piece *images* :test #'string=)))
 
-(defmacro find-board ()
-  '(board (find-pane-named *application-frame* 'board)))
+(defun find-board ()
+  (board (find-pane-named *application-frame* 'board)))
 
 ;;;
 
@@ -143,8 +142,7 @@
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
-  (setf (find-board) (make-instance 'board)
-        *player-color* t))
+  (setf (find-board) (make-instance 'board)))
 
 (define-chess-command (com-clear-square :name t)
     ((square 'square-with-piece))
@@ -155,12 +153,11 @@
   (setf (board-square (find-board) square) piece))
 
 (define-chess-command (com-move :name t)
-    ((from (if *player-color*
+    ((from (if (next-to-move (find-board))
                'square-with-white-piece
                'square-with-black-piece))
      (to 'square))
-  (if (make-move (find-board) from to *player-color*)
-      (setf *player-color* (not *player-color*))
+  (if (make-move (find-board) from to)
       (format (find-pane-named *application-frame* 'interactor)
               "Illegal move.")))
 
