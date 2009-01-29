@@ -112,10 +112,23 @@
                 (,piece (board-square ,%board ,%square)))
            ,@body)))))
 
-(defun copy-board (board)
-  (let ((new-board (make-instance 'board)))
-    (do-board (piece board square)
-      (setf (board-square new-board square) piece))
+(defun copy-board (board &optional into)
+  (let ((new-board (or into
+                       (make-instance 'board))))
+    (macrolet ((copy (accessors)
+                 `(setf ,@(loop for i in accessors
+                                for consp = (consp i)
+                                if consp do (setf i (car i))
+                                collect `(,i new-board)
+                                collect (if consp
+                                            (copy-list `(,i board))
+                                            `(,i board))))))
+      (do-board (piece board square)
+        (setf (board-square new-board square) piece))
+      (copy (white-en-passant black-en-passant
+             white-king black-king
+             (white-castling) (black-castling)
+             (moves))))
     new-board))
 
 (defun move (board from to &optional promote)
@@ -218,15 +231,24 @@ If move is illegal, return nil."
 
 ;;;
 
-(defun make-move (board from to color)
-  (let ((movep (check-move board from to color)))
+(defun make-move (board from to color &optional promotion)
+  (let ((move (test-move board from to color promotion)))
+    (when move
+      (copy-board move board)
+      t)))
+
+(defun test-move (board from to color &optional promotion)
+  (let* ((board (copy-board board))
+         (movep (check-move board from to color)))
     (when movep
       (move board from to
             (when (eq movep 'promotion)
-              (piece color (select-promotion))))
+              (piece color (or promotion
+                               (select-promotion)))))
       (adjust-castling board from to movep)
       (adjust-en-passant board to color movep)
-      t)))
+      (unless (check-p board (find-king board color) color)
+       board))))
 
 (defun retract-move (board move)
   (destructuring-bind (from to captured) move

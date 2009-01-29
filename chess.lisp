@@ -13,6 +13,7 @@
 (defvar *white* (make-rgb-color 1 206/255 158/255))
 
 (defvar *square-size* 50)
+(defvar *board-size* (* *square-size* 8))
 (defvar *player-color* t)
 
 (define-presentation-type square ())
@@ -32,10 +33,10 @@
   ((board :initform (make-instance 'board)
           :accessor board))
   (:default-initargs
-    :min-height (* *square-size* 8)
-    :min-width  (* *square-size* 8)
-    :max-height (* *square-size* 8)
-    :max-width  (* *square-size* 8)))
+    :min-height *board-size*
+    :min-width  *board-size*
+    :max-height *board-size*
+    :max-width  *board-size*))
 
 (define-application-frame chess ()
   ((current-color :initform t
