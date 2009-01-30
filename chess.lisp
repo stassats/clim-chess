@@ -136,6 +136,10 @@
 (defun find-board ()
   (board (find-pane-named *application-frame* 'board)))
 
+(defun (setf find-board) (new)
+  (setf (board (find-pane-named *application-frame* 'board))
+        new))
+
 ;;;
 
 (define-chess-command (com-quit :name t :menu t) ()

@@ -11,4 +11,7 @@
   :depends-on (#:mcclim)
   :components ((:file "packages")
                (:file "logic")
-               (:file "chess")))
+               (:file "chess")
+               (:file "run-program")
+               (:file "engines")
+               (:file "xboard")))
