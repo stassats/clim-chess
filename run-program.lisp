@@ -16,7 +16,7 @@
                                   :output :stream
                                   :input :stream)))
     (values process
-            (make-two-way-stream 
+            (make-two-way-stream
              (ccl:external-process-output-stream process)
              (ccl:external-process-input-stream process)))))
 

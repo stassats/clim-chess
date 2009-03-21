@@ -30,12 +30,17 @@
 
 (defclass board-pane (application-pane)
   ((board :initform (make-instance 'board)
-          :accessor board))
+          :accessor board)
+   (engine :accessor engine))
   (:default-initargs
     :min-height *board-size*
     :min-width  *board-size*
     :max-height *board-size*
     :max-width  *board-size*))
+
+(defclass draw-board-event (device-event)
+  ()
+  (:default-initargs :modifier-state 0))
 
 (define-application-frame chess () ()
   (:menu-bar t)
@@ -52,9 +57,16 @@
   (:layouts
    (default
        (vertically ()
-         turn
          (2/3 board)
-         (1/3 interactor)))))
+         (1/3 interactor)
+         turn))))
+
+(defmethod frame-standard-output ((chess chess))
+  (get-frame-pane chess 'turn))
+
+(defmethod handle-event ((client application-pane) (event draw-board-event))
+  (with-application-frame (frame)
+    (redisplay-frame-pane frame client)))
 
 ;;;
 
@@ -68,33 +80,41 @@
 
 (defun draw-board (frame pane)
   (declare (ignore frame))
-  (do-matrix (x y)
-    (draw-square pane x y)))
+  (updating-output (pane :unique-id 'board
+                         :cache-value (move-number (board pane)))
+    (do-matrix (x y)
+      (let* ((square (square x (- 7 y)))
+             (piece (board-square (board pane) square)))
+        (updating-output (pane :unique-id (+ (* 8 x) y) ; 0 <= x,y <= 7
+                               :cache-value piece
+                               :cache-test #'equalp)
+          (draw-square pane square piece x y))))))
 
 (defun square-occupied-by (piece)
   (cond ((null piece) 'square)
         ((piece-color piece) 'square-with-white-piece)
-        ('square-with-black-piece)))
+        (t 'square-with-black-piece)))
 
 (defun square-color (x y)
   (if (evenp (+ x y))
       *white* *black*))
 
-(defun draw-square (pane x y)
-  (let* ((square (square x (- 7 y)))
-         (piece (board-square (board pane) square))
-         (image (piece-image (piece-keyword piece)))
-         (x* (* x *square-size*))
-         (y* (* y *square-size*)))
+(defun draw-square (pane square piece x y)
+  (let ((x* (* x *square-size*))
+        (y* (* y *square-size*)))
     (with-output-as-presentation (pane square (square-occupied-by piece))
       (draw-rectangle* pane x* y*
                        (+ x* *square-size*)
                        (+ y* *square-size*)
                        :ink (square-color x y)))
     (when piece
-      (draw-pattern* pane image
-                     (+ x* (/ (- *square-size* (pattern-height image)) 2))
-                     (+ y* (/ (- *square-size* (pattern-width image)) 2))))))
+      (draw-piece pane piece x* y*))))
+
+(defun draw-piece (pane piece x y)
+  (let ((image (piece-image (piece-keyword piece))))
+    (draw-pattern* pane image
+                   (+ x (/ (- *square-size* (pattern-height image)) 2))
+                   (+ y (/ (- *square-size* (pattern-width image)) 2)))))
 
 (define-presentation-method accept ((type piece) stream
                                     (view textual-view) &key)
@@ -143,6 +163,7 @@
 ;;;
 
 (define-chess-command (com-quit :name t :menu t) ()
+  (stop-engine (engine (find-pane-named *application-frame* 'board)))
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
@@ -162,18 +183,34 @@
                'square-with-black-piece))
      (to 'square))
   (if (make-move (find-board) from to)
-      (format (find-pane-named *application-frame* 'interactor)
-              "Illegal move.")))
+      (send-move (engine (find-pane-named *application-frame* 'board)) from to)
+      (write-line "Illegal move.")))
 
 (define-chess-command (com-retract :name t) ()
   (let ((board (find-board)))
     (retract-move board (pop (moves board)))))
 
+(defun poll-engine (frame pane)
+  (let ((engine (engine pane)))
+    (multiple-value-bind (from to) (receive-answer engine t)
+      (make-move (board pane) from to))
+    (queue-event (frame-top-level-sheet frame)
+                 (make-instance 'draw-board-event :sheet pane))))
+
+(define-chess-command (com-start-engine :name t) ()
+  (let ((frame *application-frame*)
+        (pane (find-pane-named *application-frame* 'board))
+        (engine (make-instance 'xboard-engine)))
+    (init-engine engine)
+    (setf (engine pane) engine)
+    (clim-sys:make-process (lambda () (loop (poll-engine frame pane)))
+                          :name "Engine poll.")))
+
 (defvar *promotion-alist*
-  '(("Queen" . :q)
-    ("Rook" . :r)
-    ("Knight" . :n)
-    ("Bishop" . :b)))
+  '(("Queen" . #\q)
+    ("Rook" . #\r)
+    ("Knight" . #\n)
+    ("Bishop" . #\b)))
 
 (defun select-promotion ()
   (menu-choose *promotion-alist*

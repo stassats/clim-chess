@@ -26,14 +26,15 @@
    (moves :initform nil :accessor moves)
    (white-king :initform (keyword-square "e1") :accessor white-king)
    (black-king :initform (keyword-square "e8") :accessor black-king)
-   (white-castling :initform (cons t t)  ; long - short
+   (white-castling :initform (cons t t) ; long - short
                    :accessor white-castling)
    (black-castling :initform (cons t t)
                    :accessor black-castling)
    (en-passant :initform nil :accessor en-passant)
    (check :initform nil :accessor check)
    (checkmate :initform nil :accessor checkmate)
-   (next-to-move :initform t :accessor next-to-move)))
+   (next-to-move :initform t :accessor next-to-move)
+   (move-number :initform 0 :accessor move-number)))
 
 ;;; Square abstraction
 (defun square (rank file) (cons rank file))
@@ -100,7 +101,8 @@
 
 (defmacro do-matrix ((x y) &body body)
   `(loop for ,x to 7
-         do (loop for ,y to 7
+         do (loop named ,(gensym)
+                  for ,y to 7
                   do (progn ,@body))))
 
 (defmacro do-board ((piece board &optional square) &body body)
@@ -114,23 +116,21 @@
                 (,piece (board-square ,%board ,%square)))
            ,@body)))))
 
-(defun copy-board (board &optional into)
-  (let ((new-board (or into
-                       (make-instance 'board))))
-    (macrolet ((copy (accessors)
-                 `(setf ,@(loop for i in accessors
-                                for consp = (consp i)
-                                if consp do (setf i (car i))
-                                collect `(,i new-board)
-                                collect (if consp
-                                            `(copy-list (,i board))
-                                            `(,i board))))))
-      (do-board (piece board square)
-        (setf (board-square new-board square) piece))
-      (copy (en-passant check (moves)
-             white-king black-king
-             (white-castling) (black-castling))))
-    new-board))
+(defun copy-board (board &optional (into (make-instance 'board)))
+  (macrolet ((copy (accessors)
+               `(setf ,@(loop for i in accessors
+                              for consp = (consp i)
+                              if consp do (setf i (car i))
+                              collect `(,i into)
+                              collect (if consp
+                                          `(copy-list (,i board))
+                                          `(,i board))))))
+    (do-board (piece board square)
+      (setf (board-square into square) piece))
+    (copy (en-passant check (moves)
+           white-king black-king move-number
+           (white-castling) (black-castling))))
+  into)
 
 (defun move (board from to &optional promote)
   (setf (board-square board to) (or promote (board-square board from))
@@ -232,29 +232,34 @@ If move is illegal, return nil."
 
 ;;;
 
+(defun adjust-board (board color)
+  "Prepare board for the next move."
+  (let ((check (check-p board color)))
+    (when (setf (check board) (and check t))
+      (setf (checkmate board)
+            (checkmate-p board color check))))
+  (incf (move-number board))
+  (setf (next-to-move board) color))
+
 (defun make-move (board from to)
   (unless (checkmate board)
     (let* ((color (next-to-move board))
            (move (test-move board from to color)))
       (when move
         (copy-board move board)
-        (let ((check (check-p board (not color))))
-          (when (setf (check board) (and check t))
-            (when (checkmate-p board (not color) check)
-              (setf (checkmate board) t))))
-        (setf (next-to-move board) (not color))
+        (adjust-board board (not color))
         t))))
 
 (defun test-move (board from to color &optional promotion)
   (let* ((board (copy-board board))
-         (movep (check-move board from to color)))
-    (when movep
+         (move (check-move board from to color)))
+    (when move
       (move board from to
-            (when (eq movep 'promotion)
+            (when (eq move 'promotion)
               (piece color (or promotion
                                (select-promotion)))))
-      (adjust-castling board from to movep)
-      (adjust-en-passant board to color movep)
+      (adjust-castling board from to move)
+      (adjust-en-passant board to color move)
       (unless (check-p board color)
         board))))
 
@@ -385,3 +390,13 @@ If move is illegal, return nil."
        ;; and cannot move, he is dead
        (when (= (length attacks) 1)
          (can-defend-from-p board (car attacks) color)))))
+
+;;; Stalemate
+
+;; (defun stalemate-p (board color)
+;;   (do-board (piece board square)
+;;     (when (and piece (eql color (piece-color piece))
+;;                (can-move-p board square piece)))))
+
+;; (defun can-move-p ()
+;;   )
