@@ -42,7 +42,9 @@
   ()
   (:default-initargs :modifier-state 0))
 
-(define-application-frame chess () ()
+(define-application-frame chess ()
+  ((process :initform nil
+            :accessor process))
   (:menu-bar t)
   (:panes
    (board (make-pane 'board-pane
@@ -163,7 +165,11 @@
 ;;;
 
 (define-chess-command (com-quit :name t :menu t) ()
-  (stop-engine (engine (find-pane-named *application-frame* 'board)))
+  (let ((board (find-pane-named *application-frame* 'board)))
+    (when (engine board)
+      (stop-engine (engine board)))
+    (when (process *application-frame*)
+      (clim-sys:destroy-process (process *application-frame*))))
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
@@ -203,8 +209,9 @@
         (engine (make-instance 'xboard-engine)))
     (init-engine engine)
     (setf (engine pane) engine)
-    (clim-sys:make-process (lambda () (loop (poll-engine frame pane)))
-                          :name "Engine poll.")))
+    (setf (process frame)
+     (clim-sys:make-process (lambda () (loop (poll-engine frame pane)))
+                            :name "Engine poll."))))
 
 (defvar *promotion-alist*
   '(("Queen" . #\q)
