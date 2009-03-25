@@ -31,7 +31,7 @@
 (defclass board-pane (application-pane)
   ((board :initform (make-instance 'board)
           :accessor board)
-   (engine :accessor engine))
+   (engine :accessor engine :initform nil))
   (:default-initargs
     :min-height *board-size*
     :min-width  *board-size*
@@ -113,7 +113,7 @@
       (draw-piece pane piece x* y*))))
 
 (defun draw-piece (pane piece x y)
-  (let ((image (piece-image (piece-keyword piece))))
+  (let ((image (piece-image piece)))
     (draw-pattern* pane image
                    (+ x (/ (- *square-size* (pattern-height image)) 2))
                    (+ y (/ (- *square-size* (pattern-width image)) 2)))))
@@ -153,7 +153,7 @@
 (defvar *images* (load-pieces))
 
 (defun piece-image (piece)
-  (cdr (assoc piece *images* :test #'string=)))
+  (cdr (assoc (piece-keyword piece) *images* :test #'string=)))
 
 (defun find-board ()
   (board (find-pane-named *application-frame* 'board)))
@@ -198,20 +198,19 @@
 
 (defun poll-engine (frame pane)
   (let ((engine (engine pane)))
-    (multiple-value-bind (from to) (receive-answer engine t)
-      (make-move (board pane) from to))
-    (queue-event (frame-top-level-sheet frame)
-                 (make-instance 'draw-board-event :sheet pane))))
+    (loop
+     (multiple-value-bind (from to) (receive-answer engine t)
+       (make-move (board pane) from to))
+     (queue-event (frame-top-level-sheet frame)
+                  (make-instance 'draw-board-event :sheet pane)))))
 
 (define-chess-command (com-start-engine :name t) ()
-  (let ((frame *application-frame*)
-        (pane (find-pane-named *application-frame* 'board))
-        (engine (make-instance 'xboard-engine)))
-    (init-engine engine)
-    (setf (engine pane) engine)
-    (setf (process frame)
-     (clim-sys:make-process (lambda () (loop (poll-engine frame pane)))
-                            :name "Engine poll."))))
+  (with-application-frame (frame)
+    (let ((pane (find-pane-named frame 'board)))
+      (setf (engine pane) (init-engine 'xboard-engine))
+      (setf (process frame)
+            (clim-sys:make-process (lambda () (poll-engine frame pane))
+                                   :name "Engine poll.")))))
 
 (defvar *promotion-alist*
   '(("Queen" . #\q)
@@ -229,14 +228,22 @@
 
 ;;; dragging-output currently does not work well in mcclim
 
-;; (define-chess-command (com-drag)
-;;     ((square 'square-with-piece)
-;;      (x 'float)
-;;      (y 'float))
-;;   (dragging-output (t :finish-on-release t)
-;;     (draw-pattern* *standard-output* (piece-image :bk) x y)))
+(defun square-on-coordinates (x y)
+  (let ((x (truncate x *square-size*))
+        (y (truncate y *square-size*)))
+    (square x (- 7 y))))
 
-;; (define-presentation-to-command-translator translator-drag
-;;     (square-with-piece com-drag chess)
-;;     (object x y)
-;;   (list object x y))
+(define-chess-command (com-drag)
+    ((square 'square-with-piece)
+     (x 'float)
+     (y 'float))
+  (let ((pane (find-pane-named *application-frame* 'board)))
+    (multiple-value-bind (final-x final-y)
+        (dragging-output (pane :finish-on-release t)
+                         (draw-circle* pane x y 10))
+      (com-move square (square-on-coordinates final-x final-y)))))
+
+(define-presentation-to-command-translator translator-drag
+    (square-with-piece com-drag chess :echo nil)
+    (object x y)
+  (list object x y))
