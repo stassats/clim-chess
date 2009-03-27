@@ -11,6 +11,7 @@
 
 (defgeneric init-engine (engine))
 (defgeneric stop-engine (engine))
+(defgeneric reset-engine (engine))
 (defgeneric send-move (engine from to))
 (defgeneric receive-answer (engine &optional hang))
 

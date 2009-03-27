@@ -20,6 +20,9 @@
 (defcommand stop-engine (xboard-engine)
   (write-line "quit" stream))
 
+(defcommand reset-engine (xboard-engine)
+  (write-line "new" stream))
+
 (defcommand send-move (xboard-engine from to)
   (write-line (encode-move from to) stream))
 

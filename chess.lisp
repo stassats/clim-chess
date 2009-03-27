@@ -44,41 +44,50 @@
 
 (define-application-frame chess ()
   ((process :initform nil
-            :accessor process))
+            :accessor process)
+   (status-string :initform "" :accessor status-string))
   (:menu-bar t)
   (:panes
    (board (make-pane 'board-pane
                      :display-function 'draw-board
                      :incremental-redisplay t
                      :scroll-bars nil))
-   (turn :application
-         :scroll-bars nil
-         :incremental-redisplay t
-         :display-function 'display-turn)
+   (status :application
+           :scroll-bars nil
+           :incremental-redisplay t
+           :display-function 'display-status
+           :max-height 20
+           :min-height 20)
    (interactor :interactor))
   (:layouts
    (default
        (vertically ()
-         (2/3 board)
-         (1/3 interactor)
-         turn))))
+                   status
+                   (2/3 board)
+                   (1/3 interactor)))))
 
 (defmethod frame-standard-output ((chess chess))
   (get-frame-pane chess 'turn))
 
 (defmethod handle-event ((client application-pane) (event draw-board-event))
   (with-application-frame (frame)
-    (redisplay-frame-pane frame client)))
+    (redisplay-frame-pane frame client)
+    (redisplay-frame-pane frame (find-pane-named frame 'status))))
 
 ;;;
 
-(defun display-turn (frame pane)
-  (declare (ignore frame))
+(defun determine-status (pane)
   (let ((board (find-board)))
-    (draw-text* pane (format nil "~:[Black~;White~]'s turn." (next-to-move board))
-                10 15)
-    (when (checkmate board)
-      (draw-text* pane "Checkmate." 10 30))))
+   (cond ((checkmate board) "Checkmate.")
+         ((check board) "Check.")
+         (t (status-string pane)))))
+
+(defun display-status (frame pane)
+  (let ((status (determine-status frame)))
+   (updating-output (pane :unique-id 'status-bar
+                          :cache-value status
+                          :cache-test #'equal)
+                    (princ status pane))))
 
 (defun draw-board (frame pane)
   (declare (ignore frame))
@@ -173,6 +182,9 @@
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
+  (let ((board (find-pane-named *application-frame* 'board)))
+    (when (engine board)
+      (reset-engine (engine board))))
   (setf (find-board) (make-instance 'board)))
 
 (define-chess-command (com-clear-square :name t)
@@ -188,9 +200,11 @@
                'square-with-white-piece
                'square-with-black-piece))
      (to 'square))
-  (if (make-move (find-board) from to)
-      (send-move (engine (find-pane-named *application-frame* 'board)) from to)
-      (write-line "Illegal move.")))
+  (let* ((board (find-board))
+         (move (make-move board from to)))
+    (if move
+        (send-move (engine (find-pane-named *application-frame* 'board)) from to)
+        (setf (status-string *application-frame*) "Illegal move."))))
 
 (define-chess-command (com-retract :name t) ()
   (let ((board (find-board)))
