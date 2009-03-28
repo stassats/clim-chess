@@ -14,7 +14,8 @@
   (let ((process (ccl:run-program program arguments
                                   :wait nil
                                   :output :stream
-                                  :input :stream)))
+                                  :input :stream
+                                  :sharing :lock)))
     (values process
             (make-two-way-stream
              (ccl:external-process-output-stream process)
