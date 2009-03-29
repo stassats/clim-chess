@@ -59,10 +59,15 @@
     (setf (aref (contents board) (rank square) (file square))
           value)))
 
-(defun find-king (board color)
+(defun king-square (board color)
   (if color
       (white-king board)
       (black-king board)))
+
+(defun (setf king-square) (square board color)
+  (if color
+      (setf (white-king board) square)
+      (setf (black-king board) square)))
 
 (defun square-keyword (square)
   "0 0 -> a1"
@@ -139,7 +144,8 @@
 ;;;
 
 (defun check-move (board from to color)
-  (when (and (valid-square-p from) (valid-square-p to))
+  (when (and (valid-square-p from) (valid-square-p to)
+             (not (checkmate board)))
     (let ((piece-from (board-square board from))
           (piece-to (board-square board to)))
       (unless (or (null piece-from)
@@ -150,7 +156,7 @@
 
 (defun check-piece-move (board from to color)
   (funcall (find-symbol (string-upcase (piece-name (board-square board from)))
-                        :clim-chess)
+                        '#:clim-chess)
            board from to color))
 
 ;; Changes to coordinates
@@ -242,13 +248,12 @@ If move is illegal, return nil."
   (setf (next-to-move board) color))
 
 (defun make-move (board from to)
-  (unless (checkmate board)
-    (let* ((color (next-to-move board))
-           (move (test-move board from to color)))
-      (when move
-        (copy-board move board)
-        (adjust-board board (not color))
-        t))))
+  (let* ((color (next-to-move board))
+         (move (test-move board from to color)))
+    (when move
+      (copy-board move board)
+      (adjust-board board (not color))
+      t)))
 
 (defun test-move (board from to color &optional promotion)
   (let* ((board (copy-board board))
@@ -279,9 +284,7 @@ If move is illegal, return nil."
   (let* ((piece (board-square board to))
          (castlings (castlings board (piece-color piece))))
     (case (piece-name piece)
-      (#\k (if (piece-color piece)
-               (setf (white-king board) to)
-               (setf (black-king board) to))
+      (#\k (setf (king-square board (piece-color piece)) to)
            (when (eq castling 'castling)
              (make-castling board to))
            (setf (car castlings) nil (cdr castlings) nil))
@@ -291,8 +294,8 @@ If move is illegal, return nil."
 
 (def-check check-castling
   (and (not (check board))
-       (zerop file+) (= length 2)
-       (if (plusp rank+)
+       (zerop file+) (= length 2) ; horizontal move
+       (if (plusp rank+)          ; long / short castling
            (and
             (cdr (castlings board color))
             (%free-path-p 3 '(1 . 0) board from))
@@ -328,7 +331,7 @@ If move is illegal, return nil."
                   (-1  . -1) (0  . -1) (1  . -1)))
 
 (defun check-p (board color)
-  (square-attacked-by board (find-king board color) color))
+  (square-attacked-by board (king-square board color) color))
 
 (defun square-attacked-by (board square color &optional test-move)
   (append (attacks-by-knight board square color test-move)
@@ -366,7 +369,7 @@ If move is illegal, return nil."
 ;;; Checkmate
 
 (defun can-king-move-p (board color)
-  (let ((king-square (find-king board color)))
+  (let ((king-square (king-square board color)))
     (loop for diff in *moves*
           for square = (add-square king-square diff)
           thereis (test-move board king-square square
@@ -381,7 +384,7 @@ If move is illegal, return nil."
   ;; we can only capture a knight
   (if (eql #\n (piece-name (board-square board from)))
       (square-attacked-by board from (not color) t)
-      (%can-defend-from-p board from (find-king board color) (not color))))
+      (%can-defend-from-p board from (king-square board color) (not color))))
 
 (defun checkmate-p (board color attacks)
   (not
