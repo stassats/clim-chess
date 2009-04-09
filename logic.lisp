@@ -6,14 +6,14 @@
 (in-package #:clim-chess)
 
 (defvar *initial-position*
-  #(((t . #\r) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\r))
-    ((t . #\n) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\n))
-    ((t . #\b) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\b))
-    ((t . #\q) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\q))
-    ((t . #\k) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\k))
-    ((t . #\b) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\b))
-    ((t . #\n) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\n))
-    ((t . #\r) (t . #\p) nil nil nil nil (nil . #\p) (nil . #\r))))
+  #((#\R #\P nil nil nil nil #\p #\r)
+    (#\N #\P nil nil nil nil #\p #\n)
+    (#\B #\P nil nil nil nil #\p #\b)
+    (#\Q #\P nil nil nil nil #\p #\q)
+    (#\K #\P nil nil nil nil #\p #\k)
+    (#\B #\P nil nil nil nil #\p #\b)
+    (#\N #\P nil nil nil nil #\p #\n)
+    (#\R #\P nil nil nil nil #\p #\r)))
 
 (defvar *letters* "abcdefgh")
 (defvar *pieces* '("wr" "wn" "wb" "wq" "wk" "wp"
@@ -80,17 +80,19 @@
   (square (position (char-downcase (char keyword 0)) *letters*)
           (1- (parse-integer keyword :start 1))))
 
-(defun piece-color (piece) (car piece))
-(defun piece-name  (piece) (cdr piece))
-(defun piece  (color name) (cons color name))
+(defun piece-color (piece) (upper-case-p piece))
+(defun piece-name  (piece) (char-downcase piece))
+(defun piece  (color name) (if color
+                               (char-upcase name)
+                               (char-downcase name)))
 
 (defun keyword-piece (piece)
-  "wp -> (t . #\p)"
+  "wp -> #\P"
   (piece (char-equal (char piece 0) #\w)
          (char-downcase (char piece 1))))
 
 (defun piece-keyword (piece)
-  "(t . #\p) -> wp"
+  "#\p -> bp"
   (concatenate 'string
                (if (piece-color piece) "w" "b")
                (string (piece-name piece))))
