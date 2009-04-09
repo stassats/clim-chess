@@ -37,9 +37,9 @@
    (move-number :initform 0 :accessor move-number)))
 
 ;;; Square abstraction
-(defun square (rank file) (cons rank file))
-(defun rank (square) (car square))
-(defun file (square) (cdr square))
+(defun square (rank file) (+ (* rank 10) file))
+(defun rank (square) (values (truncate square 10)))
+(defun file (square) (rem square 10))
 
 (defun valid-square-p (square)
   (and (>= 7 (rank square) 0)
@@ -47,8 +47,8 @@
 
 (defun add-square (square add)
   "(4 . 0) + (1 . 1) => (5 . 1)"
-  (square (+ (rank square) (rank add))
-          (+ (file square) (file add))))
+  (square (+ (rank square) (car add))
+          (+ (file square) (cdr add))))
 
 (defun board-square (board square)
   (when (valid-square-p square)
