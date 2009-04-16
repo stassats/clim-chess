@@ -58,13 +58,20 @@
            :display-function 'display-status
            :max-height 20
            :min-height 20)
+   (color :application
+          :scroll-bars nil
+          :incremental-redisplay t
+          :display-function 'display-color
+          :max-height 35
+          :min-height 35)
    (interactor :interactor))
   (:layouts
    (default
        (vertically ()
+                   color
                    status
-                   (2/3 board)
-                   (1/3 interactor)))))
+                   (3/5 board)
+                   (1/5 interactor)))))
 
 (defmethod frame-standard-output ((chess chess))
   (get-frame-pane chess 'turn))
@@ -72,7 +79,8 @@
 (defmethod handle-event ((client application-pane) (event draw-board-event))
   (with-application-frame (frame)
     (redisplay-frame-pane frame client)
-    (redisplay-frame-pane frame (find-pane-named frame 'status))))
+    (redisplay-frame-pane frame (find-pane-named frame 'status))
+    (redisplay-frame-pane frame (find-pane-named frame 'color))))
 
 ;;;
 
@@ -89,6 +97,13 @@
                           :cache-test #'equal)
                     (princ status pane))))
 
+(defun display-color (frame pane)
+  (let ((color (next-to-move (find-board frame))))
+    (updating-output (pane :unique-id 'color :cache-value color)
+                     (with-text-size (pane :large)
+                      (princ (if color "White." "Black.")
+                             pane)))))
+
 (defun draw-board (frame pane)
   (declare (ignore frame))
   (updating-output (pane :unique-id 'board
@@ -98,7 +113,7 @@
              (piece (board-square (board pane) square)))
         (updating-output (pane :unique-id (+ (* 8 x) y) ; 0 <= x,y <= 7
                                :cache-value piece
-                               :cache-test #'equalp)
+                               :cache-test #'eql)
           (draw-square pane square piece x y))))))
 
 (defun square-occupied-by (piece)
@@ -164,11 +179,11 @@
 (defun piece-image (piece)
   (cdr (assoc (piece-keyword piece) *images* :test #'string=)))
 
-(defun find-board ()
-  (board (find-pane-named *application-frame* 'board)))
+(defun find-board (&optional (frame *application-frame*))
+  (board (find-pane-named frame 'board)))
 
-(defun (setf find-board) (new)
-  (setf (board (find-pane-named *application-frame* 'board))
+(defun (setf find-board) (new &optional (frame *application-frame*))
+  (setf (board (find-pane-named frame 'board))
         new))
 
 ;;;
@@ -214,9 +229,14 @@
   (let ((engine (engine pane)))
     (loop
      (multiple-value-bind (from to) (receive-answer engine t)
-       (make-move (board pane) from to))
+       (make-move (board pane) from to)
+       (setf (status-string frame)
+             (format nil "~a ~a" (square-keyword from)
+                     (square-keyword to))))
+
      (queue-event (frame-top-level-sheet frame)
-                  (make-instance 'draw-board-event :sheet pane)))))
+                  (make-instance 'draw-board-event :sheet pane))
+     (sleep 0.001))))
 
 (define-chess-command (com-start-engine :name t) ()
   (with-application-frame (frame)
@@ -259,5 +279,5 @@
 
 (define-presentation-to-command-translator translator-drag
     (square-with-piece com-drag chess :echo nil)
-    (object x y)
+  (object x y)
   (list object x y))
