@@ -51,13 +51,11 @@
           (+ (file square) (file add))))
 
 (defun board-square (board square)
-  (when (valid-square-p square)
-    (aref (contents board) (rank square) (file square))))
+  (aref (contents board) (rank square) (file square)))
 
 (defun (setf board-square) (value board square)
-  (when (valid-square-p square)
-    (setf (aref (contents board) (rank square) (file square))
-          value)))
+  (setf (aref (contents board) (rank square) (file square))
+        value))
 
 (defun king-square (board color)
   (if color
@@ -73,12 +71,12 @@
   "0 0 -> a1"
   (coerce (vector (char *letters* (rank square))
                   (digit-char (1+ (file square))))
-          'simple-string))
+          'string))
 
 (defun keyword-square (keyword)
   "a1 -> 0 0"
   (square (position (char-downcase (char keyword 0)) *letters*)
-          (1- (parse-integer keyword :start 1))))
+          (1- (digit-char-p (char keyword 1)))))
 
 (defun piece-color (piece) (upper-case-p piece))
 (defun piece-name  (piece) (char-downcase piece))
@@ -89,7 +87,7 @@
 (defun keyword-piece (piece)
   "wp -> #\P"
   (piece (char-equal (char piece 0) #\w)
-         (char-downcase (char piece 1))))
+         (char piece 1)))
 
 (defun piece-keyword (piece)
   "#\p -> bp"
@@ -240,15 +238,6 @@ If move is illegal, return nil."
 
 ;;;
 
-(defun adjust-board (board color)
-  "Prepare board for the next move."
-  (let ((check (check-p board color)))
-    (when (setf (check board) (and check t))
-      (setf (checkmate board)
-            (checkmate-p board color check))))
-  (incf (move-number board))
-  (setf (next-to-move board) color))
-
 (defun make-move (board from to)
   (let* ((color (next-to-move board))
          (move (test-move board from to color)))
@@ -269,6 +258,15 @@ If move is illegal, return nil."
       (adjust-en-passant board to color move)
       (unless (check-p board color)
         board))))
+
+(defun adjust-board (board color)
+  "Prepare board for the next move."
+  (let ((check (check-p board color)))
+    (setf (check board) (and check t))
+    (when check
+      (setf (checkmate board) (checkmate-p board color check))))
+  (incf (move-number board))
+  (setf (next-to-move board) color))
 
 (defun retract-move (board move)
   (destructuring-bind (from to captured) move
