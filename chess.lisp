@@ -212,10 +212,13 @@
                'square-with-white-piece
                'square-with-black-piece))
      (to 'square))
-  (let* ((board (find-board))
+  (let* ((board-pane (find-pane-named *application-frame* 'board))
+         (board (board board-pane))
          (move (make-move board from to)))
+    (unless (engine board-pane)
+      (start-engine *application-frame*))
     (if move
-        (send-move (engine (find-pane-named *application-frame* 'board)) from to)
+        (send-move (engine board-pane) from to)
         (setf (status-string *application-frame*) "Illegal move."))))
 
 (define-chess-command (com-retract :name t) ()
@@ -235,13 +238,12 @@
                   (make-instance 'draw-board-event :sheet pane))
      (sleep 0.001))))
 
-(define-chess-command (com-start-engine :name t) ()
-  (with-application-frame (frame)
-    (let ((pane (find-pane-named frame 'board)))
-      (setf (engine pane) (init-engine 'xboard-engine))
-      (setf (process frame)
-            (clim-sys:make-process (lambda () (poll-engine frame pane))
-                                   :name "Engine poll.")))))
+(defun start-engine (frame)
+  (let ((pane (find-pane-named frame 'board)))
+    (setf (engine pane) (init-engine 'xboard-engine))
+    (setf (process frame)
+          (clim-sys:make-process (lambda () (poll-engine frame pane))
+                                 :name "Engine poll."))))
 
 (defvar *promotion-alist*
   '(("Queen" . #\q)
