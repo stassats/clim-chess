@@ -160,6 +160,7 @@
            board from to color))
 
 ;; Changes to coordinates
+;;    rank file
 ;;  -+    0+   ++
 ;;     \  |  /
 ;; -0 -- 0 0 -- +0
@@ -240,10 +241,12 @@ If move is illegal, return nil."
 
 (defun make-move (board from to)
   (let* ((color (next-to-move board))
+         (former-piece (board-square board to))
          (move (test-move board from to color)))
     (when move
       (copy-board move board)
       (adjust-board board (not color))
+      (record-move board from to former-piece)
       t)))
 
 (defun test-move (board from to color &optional promotion)
@@ -268,10 +271,19 @@ If move is illegal, return nil."
   (incf (move-number board))
   (setf (next-to-move board) color))
 
-(defun retract-move (board move)
-  (destructuring-bind (from to captured) move
-    (setf (board-square board from) (board-square board to)
-          (board-square board to) captured)))
+(defun record-move (board from to former-piece)
+  (push (list* from to (when former-piece (list former-piece)))
+        (moves board)))
+
+(defun retract-n-moves (board n)
+  (loop repeat n do (retract-last-move board)))
+
+(defun retract-last-move (board)
+  (when (plusp (move-number board))
+    (destructuring-bind (from to &optional captured) (pop (moves board))
+      (setf (board-square board from) (board-square board to)
+            (board-square board to) captured))
+    (decf (move-number board))))
 
 ;;; Castling
 
