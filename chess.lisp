@@ -6,8 +6,10 @@
 (in-package #:clim-chess)
 
 (defvar *images-path*
-  (merge-pathnames "images/" #.(make-pathname :defaults *compile-file-truename*
-                                              :name nil :type nil)))
+  (merge-pathnames "images/"
+                   #.(make-pathname :name nil :type nil
+                                    :defaults (or *compile-file-truename*
+                                                  *load-truename*))))
 
 (defvar *black* (make-rgb-color 209/255 139/255 71/255))
 (defvar *white* (make-rgb-color 1 206/255 158/255))
@@ -189,11 +191,6 @@
 ;;;
 
 (define-chess-command (com-quit :name t :menu t) ()
-  (let ((board (find-pane-named *application-frame* 'board)))
-    (when (engine board)
-      (stop-engine (engine board)))
-    (when (process *application-frame*)
-      (clim-sys:destroy-process (process *application-frame*))))
   (frame-exit *application-frame*))
 
 (define-chess-command (com-reset-game :name t :menu t) ()
@@ -258,7 +255,13 @@
                :scroll-bars nil))
 
 (defun chess ()
-  (run-frame-top-level (make-application-frame 'chess)))
+  (let ((application (make-application-frame 'chess)))
+    (unwind-protect (run-frame-top-level application)
+      (let ((board (find-pane-named application 'board)))
+        (when (engine board)
+          (stop-engine (engine board)))
+        (when (process application)
+          (clim-sys:destroy-process (process application)))))))
 
 ;;; dragging-output currently does not work well in mcclim
 
