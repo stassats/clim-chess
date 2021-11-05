@@ -52,8 +52,7 @@
   (:panes
    (board (make-pane 'board-pane
                      :display-function 'draw-board
-                     :incremental-redisplay t
-                     :scroll-bars nil))
+                     :incremental-redisplay t))
    (status :application
            :scroll-bars nil
            :incremental-redisplay t
@@ -223,7 +222,8 @@
 
 (define-chess-command (com-retract :name t) ()
   (let ((board (find-board)))
-    (retract-move board (pop (moves board)))))
+    (retract-last-move board)))
+
 
 (defun poll-engine (frame pane)
   (let ((engine (engine pane)))
